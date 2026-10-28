@@ -8,6 +8,7 @@ from .gallery import GalleryModel,GalleryView
 from .dialogs import EntityDialog,LinkDialog,ImportDialog,SettingsDialog
 from .viewer import Viewer
 from .workers import Tasks
+from .search_service import SearchService
 from .images import import_paths
 from .providers.http import HttpClient
 from .providers.wikimedia import WikimediaProvider
@@ -481,7 +482,9 @@ class MainWindow(QMainWindow):
         if dialog.exec()!=QDialog.DialogCode.Accepted:return
         try:save(self.settings.root,client_id.text(),secret.text())
         except (RuntimeError,ValueError,OSError) as error:self.statusBar().showMessage(str(error),15000);return
-        self.statusBar().showMessage('네이버 API 발급 정보를 저장했습니다. 검색 출처에서 네이버 연결을 켜세요.',15000)
+        if self.settings.values.get('automatic_search',True) is True:
+            self.internet_search=SearchService(self.online_service);self.refresh_source_filters()
+        self.statusBar().showMessage('네이버 API 발급 정보를 저장했습니다. 자동 검색에서는 바로 연결합니다.',15000)
 
     def configure_browser_search(self):
         from PySide6.QtWidgets import QFormLayout,QDialogButtonBox
@@ -490,6 +493,13 @@ class MainWindow(QMainWindow):
         from .providers.dbkpop import DBKpopProvider
         from .providers.naver_images import NaverImageProvider
         dialog=QDialog(self);dialog.setWindowTitle('검색 출처 · 실험');form=QFormLayout(dialog)
+        automatic=QCheckBox('지원하는 출처를 자동으로 함께 검색 (기본)')
+        automatic.setChecked(self.settings.values.get('automatic_search',True) is True)
+        form.addRow(automatic)
+        form.addRow(QLabel('자동 검색에서는 개별 출처 체크가 필요 없습니다. 검색 창은 숨기며, 인증 정보가 있는 서비스는 자동 연결합니다.'))
+        form.addRow(QLabel('현재 검색 대상: '+', '.join(self.internet_search.providers)))
+        form.addRow(QLabel('Instagram · X · Pinterest · Dispatch는 아직 직접 연결이 구현되지 않았습니다.'))
+        form.addRow(QLabel('아래 개별 출처 설정은 자동 검색을 끈 수동 모드에서만 사용합니다.'))
         note=QLabel('출처별 공개 검색·미리보기 연결입니다. 실제 다중 출처 동작은 아직 검증되지 않았습니다.\nKpopping: Windows Edge/Chrome 필요. 장원영 목록 경로만 사용자 관측으로 확인했습니다.\n네이버: 발급 정보 입력 후 여러 사이트의 이미지 검색·미리보기를 연결합니다.\nFlickr: 공개 피드는 현재 robots 정책에서 차단됩니다. 연결 성공으로 간주하지 않습니다.\n검색 결과의 인물·구도·원본은 미확정입니다. 기본 연결은 파일 다운로드·분석·AI를 허용하지 않습니다. 아래 사이트 제공 파일 옵션을 별도로 선택하면 파일 다운로드를 허용합니다.');note.setWordWrap(True);form.addRow(note)
         fields=[]
         form.addRow(QLabel('DBKpop: 별도 브라우저/API 키 없는 공개 게시물·사진 검색. 영문 이름과 등록된 별칭을 사용하세요.'))
@@ -511,8 +521,22 @@ class MainWindow(QMainWindow):
         show_browser.setChecked(self.settings.values.get('kpopping_show_browser') is True)
         show_browser.setToolTip('기본은 창 없이 백그라운드에서 검색합니다. 표시 모드에서는 자동 스크롤과 종료 과정이 보입니다.')
         form.addRow(show_browser)
+        def mode_changed():
+            for _,_,consent,reference in fields:
+                consent.setEnabled(not automatic.isChecked());reference.setEnabled(not automatic.isChecked())
+            files_preview.setEnabled(not automatic.isChecked());show_browser.setEnabled(not automatic.isChecked())
+        automatic.toggled.connect(mode_changed);mode_changed()
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Save|QDialogButtonBox.StandardButton.Cancel);buttons.accepted.connect(dialog.accept);buttons.rejected.connect(dialog.reject);form.addRow(buttons)
         if dialog.exec()!=QDialog.DialogCode.Accepted:return
+        if automatic.isChecked():
+            self.settings.values['automatic_search']=True
+            if self.search_flight:self.search_flight.cancelled.set()
+            self.search_session=None;self.search_auto_ready=False;self.next_search.setEnabled(False);self.search_scroll_timer.stop()
+            self.settings.values['kpopping_show_browser']=False
+            self.internet_search=SearchService(self.online_service)
+            self.settings.save();self.refresh_source_filters()
+            self.statusBar().showMessage('지원 출처 자동 검색 · 검색 브라우저 숨김으로 저장했습니다.',12000)
+            return
         if any(consent.isChecked() and not reference.text().strip() for _,_,consent,reference in fields):self.statusBar().showMessage('활성화할 출처별 이용 조건 확인 근거가 필요합니다.');return
         if files_preview.isChecked() and not fields[0][2].isChecked():self.statusBar().showMessage('사이트 제공 파일 미리보기는 Kpopping 검색 연결과 함께 사용하세요.');return
         if fields[-1][2].isChecked():
@@ -521,6 +545,7 @@ class MainWindow(QMainWindow):
             except (RuntimeError,ValueError) as error:self.statusBar().showMessage(str(error),15000);return
         if self.search_flight:self.search_flight.cancelled.set()
         self.search_session=None;self.search_auto_ready=False;self.next_search.setEnabled(False);self.search_scroll_timer.stop()
+        self.settings.values['automatic_search']=False
         for provider_type,key,consent,reference in fields:
             enabled=consent.isChecked();provider=provider_type(self.online_service)
             if enabled:

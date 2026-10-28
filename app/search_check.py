@@ -21,9 +21,11 @@ def check(online, query, *, search=None, limit=3, batches=2, check_files=False, 
     report = dict(checked_at=datetime.now(timezone.utc).isoformat(), query=query,
                   scope='configured search and library pipeline; not GUI interaction',
                   sources=list(search.providers), pages=[], items=[], errors=[], failure_details=[],
+                  automatic_search=online.settings.values.get('automatic_search',True) is True,
+                  source_status=search.source_status,
                   file_check_requested=check_files, save_requested=save,
-                  provided_preview_enabled=online.settings.values.get('kpopping_provided_preview') is True,
-                  search_browser_visible=online.settings.values.get('kpopping_show_browser') is True,
+                  provided_preview_enabled=online.settings.values.get('automatic_search',True) is True or online.settings.values.get('kpopping_provided_preview') is True,
+                  search_browser_visible=False if online.settings.values.get('automatic_search',True) is True else online.settings.values.get('kpopping_show_browser') is True,
                   permissions_changed=False, ui_verified=False, stage1_complete=False,
                   checks_passed=False)
     try:

@@ -1,5 +1,16 @@
 # 다중 출처 조사와 연결 상태
 
+## 사용자 우선순위 수정: 직접 사진 출처 중심
+
+사용자는 국내 검색 포털보다 Instagram, X, Pinterest, Dispatch 같은 실제 사진 출처를 원한다. 네이버는 선택적 보조 연결로 유지하고 이들 직접 출처의 지원 범위를 우선 조사한다. 현재 네 서비스의 앱 어댑터는 없다.
+
+- Instagram: 공식 Instagram Login 문서에 비즈니스/크리에이터 계정 중심의 계정 관리 범위가 명시돼 있다. 임의의 모든 계정 사진을 자유 검색·대량 수집하는 API가 구현됐다고 말하지 않는다. https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login
+- X: 공식 문서에서 최근 7일 검색과 전체 아카이브 검색 범위를 확인했다. 전체 아카이브는 pay-per-use/Enterprise 범위로 안내돼 있다. 인증·요금제·미디어 조회 및 페이지 처리를 별도로 연결해야 한다. 비용 사용은 사용자 동의 없이 진행하지 않는다. https://docs.x.com/x-api/posts/search/introduction
+- Pinterest: 공식 개발자 문서 페이지는 응답했으나 실제 검색 API 권한·범위를 이 조사에서 확정하지 못했다. 일반 이미지 검색 연동 완료로 세지 않는다. https://developers.pinterest.com/
+- Dispatch/Dipe: robots와 Dispatch 홈페이지는 HTTP 200. robots는 wp-admin/page/일부 archive 경로를 금지하고 crawl-delay=4를 명시한다. 홈페이지의 실제 검색 폼에서 관측한 `/search?search_keyword=이서` 요청은 HTTP 404 및 Site Maintenance/Page NOT Found였다. 포털 검색 API로 대체했다는 이유로 Dispatch 직접 연동을 완료 처리하지 않는다. 실제 사진 채널·게시물 경로와 원본/미리보기를 추가 검증해야 한다. https://www.dispatch.co.kr/robots.txt · https://www.dipe.co.kr/robots.txt
+
+현재 구체적으로 조사한 범위와 필요한 계정/API 조건을 구분해 보고하고, 지원하지 않는 서비스를 선택지로만 추가해 연결된 것처럼 표시하지 않는다.
+
 목표는 한 사이트의 갤러리를 여는 데 그치지 않고 여러 사이트의 사진을 검색·표시·보관 경로로 연결하는 것이다. Wikimedia는 이전 지시에 따라 통합 검색에서 계속 제외한다. 접속 가능, 검색 성공, 사진 디코딩, 원본 보관, Windows 동작을 별도로 기록한다.
 
 | 출처 | 실제 확인 | 현재 연결/남은 일 |

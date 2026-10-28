@@ -12,6 +12,10 @@ class SearchService:
     def __init__(self,online,providers=None):
         self.online=online;self.db=online.db
         self.configuration_errors=[]
+        self.source_status=[]
+        if providers is None and online.settings.values.get('automatic_search',True) is True:
+            from .automatic_sources import configured
+            providers,self.source_status=configured(online)
         if providers is None:
             from .providers.page_search import PageSearchProvider
             providers=[]
@@ -107,7 +111,7 @@ class SearchService:
         if index>=len(variants):return dict(added=0,state='exhausted')
         saved=json.loads(session['cursor']) if session['cursor'] else {}
         states=saved.get('providers',{});disabled=set(saved.get('disabled',[]))
-        names=sorted((name for name in self.providers if name not in disabled and states.get(name,{}).get('state','ready')=='ready'),key=lambda name:states.get(name,{}).get('pages',0))[:2]
+        names=sorted((name for name in self.providers if name not in disabled and states.get(name,{}).get('state','ready')=='ready'),key=lambda name:states.get(name,{}).get('pages',0))
         added=0;errors=[]
         with ThreadPoolExecutor(max_workers=2,thread_name_prefix='image-search') as executor:
             futures={executor.submit(self.providers[name].search_images,self.provider_query(self.providers[name],variants[index],session),states.get(name,{}).get('cursor'),cancelled):name for name in names}

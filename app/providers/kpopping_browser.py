@@ -16,11 +16,13 @@ class KpoppingBrowserProvider:
     identity_search=True
     def __init__(self,online):self.online=online;online.web.repo.save_spec(SPEC)
     def search_images(self,query,cursor,cancelled):
+        if self.online.settings.values.get('automatic_search',True) is True:
+            self.online.settings.values['kpopping_provided_preview']=True
         if platform.system()!='Windows':raise RemoteError('Windows 사용자 PC의 브라우저 검색 경로입니다.',blocked=True)
         repo=self.online.web.repo;repo.require(self.name,'metadata_search')
         term=query.strip().casefold();known=next((url for name,url in OBSERVED_PAGES.items() if term==name or term.startswith(name+' ')),None);url=known or 'https://kpopping.com/kpics'
         try:
-            result=self._worker(dict(query=query,url=url,known_artist_page=bool(known),batch=(cursor or {}).get('batch',0),scroll_cursor=(cursor or {}).get('scroll_cursor'),show_browser=self.online.settings.values.get('kpopping_show_browser') is True),cancelled)
+            result=self._worker(dict(query=query,url=url,known_artist_page=bool(known),batch=(cursor or {}).get('batch',0),scroll_cursor=(cursor or {}).get('scroll_cursor'),show_browser=False if self.online.settings.values.get('automatic_search',True) is True else self.online.settings.values.get('kpopping_show_browser') is True),cancelled)
         except Exception as error:
             self._audit(dict(query=query,state='error',error=str(error),stage1_complete=False));raise
         self._audit(dict(query=query,state='browser_candidates_received',page_url=result['page_url'],candidate_count=len(result['items']),filter_verified=result.get('filter_verified') is True,original_verified=False,stage1_complete=False))
@@ -50,7 +52,8 @@ class KpoppingBrowserProvider:
             root=Path(directory);input_path=root/'request.json';output_path=root/'result.json'
             input_path.write_text(json.dumps(request),'utf-8');process=None
             try:
-                process=subprocess.Popen([sys.executable,'-m','app.browser_search_worker',str(input_path),str(output_path)],cwd=Path(__file__).resolve().parents[2],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+                flags=getattr(subprocess,'CREATE_NO_WINDOW',0) if platform.system()=='Windows' else 0
+                process=subprocess.Popen([sys.executable,'-m','app.browser_search_worker',str(input_path),str(output_path)],cwd=Path(__file__).resolve().parents[2],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags=flags)
                 start=time.monotonic()
                 while process.poll() is None:
                     if cancelled.wait(.1):raise Cancelled()

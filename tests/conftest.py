@@ -17,4 +17,8 @@ def photo(tmp_path):
 
 @pytest.fixture
 def settings(tmp_path):
-    return Settings(tmp_path/'user')
+    settings=Settings(tmp_path/'user')
+    # Existing permission/source tests explicitly exercise manual mode. The new
+    # automatic/default workflow has separate integration tests.
+    settings.values['automatic_search']=False
+    return settings

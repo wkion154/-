@@ -265,7 +265,7 @@ class WebService:
             if item['role']!='thumbnail':raise RemoteError('검사된 이미지가 없습니다. 원본 임시 검사 권한도 별도로 필요합니다.')
             from .provided_files import source_url
             provided=source_url(item)
-            if provided and self.settings.values.get('kpopping_provided_preview') is True:
+            if provided and (self.settings.values.get('automatic_search',True) is True or self.settings.values.get('kpopping_provided_preview') is True):
                 # Explicit opt-in plus both source/item download grants. The CDN
                 # policy is checked independently; the blocked wrapper is not used.
                 from .provided_preview_cache import preview
