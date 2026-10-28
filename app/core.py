@@ -14,7 +14,7 @@ def data_root():
 
 class Settings:
     defaults = dict(thumbnail_size=216, sort='newest', sidebar=True, info=True,
-                    viewer_mode='fit', library_mode='all', network_workers=2, online_enabled=True, auto_register=True, theme='dark', cache_path='', storage_path='')
+                    viewer_mode='fit', analysis_auto=False, analysis_vision=True, library_mode='all', network_workers=2, online_enabled=True, auto_register=True, theme='dark', cache_path='', storage_path='')
 
     def __init__(self, root):
         self.root = Path(root)
@@ -27,13 +27,13 @@ class Settings:
                 self.values.update(value)
         except (OSError, ValueError):
             pass
-        for key in ('sidebar', 'info', 'online_enabled', 'auto_register'):
+        for key in ('sidebar', 'info', 'online_enabled', 'auto_register','analysis_auto','analysis_vision'):
             if not isinstance(self.values[key], bool):
                 self.values[key] = self.defaults[key]
         size = self.values.get('thumbnail_size')
         if not isinstance(size, int) or not 128 <= size <= 384:
             self.values['thumbnail_size'] = 216
-        if self.values['sort'] not in ('newest', 'oldest', 'name', 'resolution'):
+        if self.values['sort'] not in ('newest', 'oldest', 'name', 'resolution','color_share'):
             self.values['sort'] = 'newest'
         for key in ('cache_path', 'storage_path'):
             if not isinstance(self.values[key], str):

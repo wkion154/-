@@ -60,6 +60,8 @@ class OnlineService:
         self.clock=clock
         from .web_service import WebService
         self.web=WebService(db,settings,clock=clock)
+        from .image_analysis import ImageAnalysisService
+        self.analysis=ImageAnalysisService(self)
 
     def ready(self,operation='metadata_search'):
         return self.repo.reviewed() and self.web.repo.allowed('wikimedia',operation)
@@ -78,7 +80,7 @@ class OnlineService:
         result=None
         try:
             if cancelled.is_set():raise Cancelled()
-            if not job['kind'].startswith('web_'):self.require_review()
+            if not job['kind'].startswith('web_') and job['kind']!='image_analyze':self.require_review()
             result,next_payload=self.execute(job,cancelled)
             state='queued' if next_payload is not None else 'done'
             self.repo.finish(job['id'],state,result=result,payload=next_payload,claim_token=job['claim_token'])
@@ -96,10 +98,11 @@ class OnlineService:
             logging.exception('Online job failed')
             state='failed'
             self.repo.finish(job['id'],'failed',str(error),claim_token=job['claim_token'])
-        return dict(id=job['id'],kind=job['kind'],state=state,library_changed=state=='done' and (job['kind'] in ('download','web_download') or bool(result and result.get('registered'))))
+        return dict(id=job['id'],kind=job['kind'],state=state,analysis_updated=bool(result and result.get('analysis_updated')),library_changed=state=='done' and (job['kind'] in ('download','web_download') or bool(result and result.get('registered'))))
 
     def execute(self,job,cancelled):
         kind,payload=job['kind'],job['payload']
+        if kind=='image_analyze':return self.analysis.run(payload['entry_id'],cancelled,payload.get('force',False),payload.get('sha256')),None
         if kind.startswith('web_'):
             result=self.web.execute(job,cancelled)
             continuation=(payload|{'after':result['next_cursor'],'analysis_sha':result['analysis_sha']}) if kind=='web_analyze' and result.get('next_cursor') else None

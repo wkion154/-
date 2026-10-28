@@ -21,7 +21,7 @@ class OnlineRunner(QObject):
         self.tasks=Tasks(self,self.NETWORK_SLOTS)
         self.analysis_tasks=Tasks(self,1)
         self.analysis_tasks.pool.setThreadPriority(QThread.Priority.LowPriority)
-        self.closed=False;self.paused=False;self.last_schedule=0;self.failed_jobs=set();self.last_state='준비됨'
+        self.closed=False;self.paused=False;self.last_schedule=0;self.last_analysis_schedule=0;self.failed_jobs=set();self.last_state='준비됨'
         self.flights={};self.active_tokens=set();self.holds=set();self.quiet_until=0
         self.context=threading.local();self.schedule_lock=threading.Lock()
         self.started.connect(self.mark_active)
@@ -57,11 +57,12 @@ class OnlineRunner(QObject):
         configured=self.settings.values.get('network_workers',self.NETWORK_SLOTS)
         network_slots=configured if type(configured) is int and configured in (1,2) else self.NETWORK_SLOTS
         for queue,capacity in (('network',network_slots),('analysis',1)):
+            queue_auto=automatic or (queue=='analysis' and self.settings.values.get('analysis_auto',False) and not self.paused and not self.foreground_busy)
             used=sum(f['queue']==queue for f in self.flights.values())
             for _ in range(capacity-used):
                 identity=self.requests[queue].popleft() if self.requests[queue] else None
-                if not automatic and not identity:break
-                self.launch(queue,identity,automatic)
+                if not queue_auto and not identity:break
+                self.launch(queue,identity,queue_auto)
 
     def mark_active(self,token,queue):
         if self.closed or token not in self.flights:return
@@ -92,6 +93,8 @@ class OnlineRunner(QObject):
                         if ready:self.service.repo.schedule()
                         if hasattr(self.service,'web'):self.service.web.schedule(self.service.repo)
                         self.last_schedule=time.monotonic()
+            if queue=='analysis' and automatic and hasattr(self.service,'analysis') and time.monotonic()-self.last_analysis_schedule>=60:
+                self.service.analysis.schedule(self.service.repo);self.last_analysis_schedule=time.monotonic()
             if identity:
                 result=self.service.run_one(cancel,queue=queue,job_id=identity)
                 if result is None:
@@ -133,4 +136,5 @@ class OnlineRunner(QObject):
         self.closed=True;self.timer.stop();self.pause()
         self.service.on_job_started=None
         self.tasks.stop();self.analysis_tasks.stop()
+        if hasattr(self.service,'analysis'):self.service.analysis.close()
         self.flights.clear();self.active_tokens.clear()

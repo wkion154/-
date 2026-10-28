@@ -6,7 +6,7 @@ from .source_repository import SourceRepository
 from .providers.http import Cancelled
 
 CONFIRMED = ('user_confirmed', 'confirmed')
-VERSION = 'metadata-related-v1'
+VERSION = 'metadata-appearance-v2'
 
 
 def calendar_day(value):
@@ -135,6 +135,13 @@ class RelatedRepository:
                         # Half-open text range uses the persistent date index, not substr/full scan.
                         end = date.fromordinal(date.fromisoformat(day).toordinal()+1).isoformat() if day != '9999-12-31' else '9999-12-32'
                         add(conn.execute(f'SELECT * FROM assets WHERE {column}>=? AND {column}<? ORDER BY {column},id LIMIT ?', (day, end, self.PER_REASON+1)))
+            appearance={}
+            if not reference:
+                from .appearance import nearby
+                appearance=nearby(conn,identity)
+                for other in appearance:
+                    asset=conn.execute('SELECT * FROM assets WHERE id=?',(other,)).fetchone()
+                    if asset:add([asset])
             visual = {}
             source_pages = set()
             seed_web = conn.execute('SELECT id,page_id,dhash,sha256 FROM web_images WHERE local_asset_id=? AND sha256=? LIMIT 8', (identity,seed['sha256'])).fetchall()
@@ -197,6 +204,12 @@ class RelatedRepository:
                     day = calendar_day(seed[column])
                     if day and day == calendar_day(row[column]):
                         score += weight;reasons.append(label+': '+day)
+                same_day=calendar_day(seed['captured']) and calendar_day(seed['captured'])==calendar_day(row['captured'])
+                if other in appearance and (matched or same_day):
+                    for evidence in appearance[other]:
+                        score+=10
+                        reasons.append(('배경 영역 색상 유사' if evidence['region']=='background' else '상체 영역 색상 유사')+f" · ΔE76 {evidence['delta_e']:.1f} · 의상/장소/같은 촬영 확정 아님")
+                    if not override:relation='appearance_candidate'
                 if not score:continue
                 if reference:
                     reasons.append('로컬 분석·AI 입력 권한 확인 · 얼굴 크기/각도/선명도는 미평가')
@@ -204,7 +217,7 @@ class RelatedRepository:
                         score += 5;reasons.append('기준보다 전체 픽셀 수가 큼 · 얼굴 품질 보장 아님')
                 origins = [dict(r) for r in conn.execute("SELECT COALESCE(p.name,s.source_id) AS name,s.page_url,s.license_url FROM asset_sources s LEFT JOIN source_profiles p ON p.id=s.source_id WHERE s.asset_id=? AND (s.item_id<>'' OR s.source_id='local') LIMIT 8", (other,))]
                 origins += [dict(name='Wikimedia Commons',page_url=r['source_url'],license_url=r['license_url']) for r in conn.execute('SELECT source_url,license_url FROM remote_images WHERE local_asset_id=? LIMIT 8',(other,))]
-                row.update(reasons=reasons, score=score, relation=relation, origins=origins)
+                row.update(reasons=reasons, score=score, relation=relation, origins=origins,appearance=appearance.get(other,[]))
                 results.append(row)
         results.sort(key=lambda r: (-r['score'], -r['width']*r['height'], r['id']))
         if len(results) > self.MAX_RESULTS:truncated = True
@@ -212,7 +225,7 @@ class RelatedRepository:
         check()
         # Audit snapshot, not an authorization token or a stale result cache.
         payload = dict(seed_sha256=seed['sha256'], reference=reference, person=person,
-                       candidates=[dict(id=r['id'],sha256=r['sha256'],score=r['score'],relation=r['relation'],reasons=r['reasons']) for r in results])
+                       candidates=[dict(id=r['id'],sha256=r['sha256'],score=r['score'],relation=r['relation'],reasons=r['reasons'],appearance=r.get('appearance',[])) for r in results])
         with self.db.connect() as conn:
             conn.execute('INSERT INTO related_searches VALUES(?,?,?,?) ON CONFLICT(seed_id) DO UPDATE SET version=excluded.version,created=excluded.created,payload=excluded.payload', (identity, VERSION, time.time(), json.dumps(payload, ensure_ascii=False)))
         return dict(seed=seed,people=seed_people,rows=results,truncated=truncated,blocked=blocked,

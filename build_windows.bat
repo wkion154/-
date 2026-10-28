@@ -9,7 +9,7 @@ if errorlevel 1 exit /b 1
 if errorlevel 1 exit /b 1
 .venv\Scripts\python -m pytest -q
 if errorlevel 1 exit /b 1
-.venv\Scripts\python -m PyInstaller --noconfirm --clean --windowed --onedir --paths . --name K-IDOL-ARCHIVE --collect-all PIL scripts\windows_entry.py
+.venv\Scripts\python -m PyInstaller --noconfirm --clean --windowed --onedir --paths . --name K-IDOL-ARCHIVE --collect-all PIL --exclude-module mediapipe --exclude-module cv2 --exclude-module jax --exclude-module jaxlib scripts\windows_entry.py
 if errorlevel 1 exit /b 1
 .venv\Scripts\python scripts\collect_licenses.py dist\K-IDOL-ARCHIVE\LICENSES
 if errorlevel 1 exit /b 1

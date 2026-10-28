@@ -1,0 +1,45 @@
+{
+  "package": "mediapipe",
+  "version": "0.10.21",
+  "license": "Apache-2.0 (installed wheel LICENSE)",
+  "upstream": "https://github.com/google-ai-edge/mediapipe",
+  "models": {
+    "pose_detection/pose_detection.tflite": "9ba9dd3d42efaaba86b4ff0122b06f29c4122e756b329d89dca1e297fd8f866c",
+    "pose_landmark/pose_landmark_full.tflite": "e9a5c5cb17f736fafd4c2ec1da3b3d331d6edbe8a0d32395855aeb2cdfd64b9f",
+    "face_detection/face_detection_full_range_sparse.tflite": "2c3728e6da56f21e21a320433396fb06d40d9088f2247c05e5635a688d45dfe1",
+    "selfie_segmentation/selfie_segmentation.tflite": "9ee168ec7c8f2a16c56fe8e1cfbc514974cbbb7e434051b455635f1bd1462f5c"
+  },
+  "scope": "Bundled MediaPipe CPU face/pose/selfie-segmentation resources inspected and executed locally. No separate model download, identity recognition or restoration model.",
+  "packages": [
+    {
+      "name": "mediapipe",
+      "version": "0.10.21",
+      "license_files": [
+        "mediapipe-LICENSE"
+      ],
+      "license_field": "Apache 2.0"
+    },
+    {
+      "name": "opencv-contrib-python",
+      "version": "4.11.0.86",
+      "license_files": [
+        "opencv-contrib-python-LICENSE-3RD-PARTY.txt",
+        "opencv-contrib-python-LICENSE.txt"
+      ],
+      "license_field": "Apache 2.0"
+    },
+    {
+      "name": "numpy",
+      "version": "1.26.4",
+      "license_files": [
+        "numpy-LICENSE.txt"
+      ],
+      "license_field": "Copyright (c) 2005-2023, NumPy Developers.\nAll rights reserved.\n\nRedistribution and use in source an"
+    }
+  ],
+  "upstream_license": {
+    "url": "https://raw.githubusercontent.com/google-ai-edge/mediapipe/v0.10.21/LICENSE",
+    "sha256": "8707eef0533987efc5b155d64761eeb6e20793f50b9bd1a68dad1cf4719d0ed8",
+    "checked_at": "2026-10-28T06:38:06.447807+00:00"
+  }
+}

@@ -105,7 +105,7 @@ class GalleryModel(QAbstractListModel):
             if generation == self.generation:
                 self.loading = False
                 self.failed.emit(message)
-        job = self.tasks.submit(lambda _: repository.query(scope, search, sort, source_filter=source_filter), done, error)
+        job = self.tasks.submit(lambda cancelled: repository.query(scope, search, sort, source_filter=source_filter,cancelled=cancelled), done, error)
         self.pending_pages[-1] = job
 
     def _dispatch_pages(self):
@@ -139,8 +139,8 @@ class GalleryModel(QAbstractListModel):
                 self.failed.emit(message)
                 self._dispatch_pages()
             self.pending_pages[number] = self.tasks.submit(
-                lambda _, number=number, scope=scope, search=search, sort=sort, source_filter=source_filter, repository=repository:
-                    repository.query(scope, search, sort, number*self.PAGE_SIZE, self.PAGE_SIZE, count=False, source_filter=source_filter),
+                lambda cancelled, number=number, scope=scope, search=search, sort=sort, source_filter=source_filter, repository=repository:
+                    repository.query(scope, search, sort, number*self.PAGE_SIZE, self.PAGE_SIZE, count=False, source_filter=source_filter,cancelled=cancelled),
                 done, error)
 
     def close_tasks(self):
@@ -341,7 +341,8 @@ class PhotoDelegate(QStyledItemDelegate):
         if row.get('kind','asset')!='asset':
             status='온라인 · '+(f"{row['width']:,} × {row['height']:,}" if row['width'] and row['height'] else '미실측')
         else:status=f"{row['width']:,} × {row['height']:,}  ·  {row['format']}"
-        painter.drawText(text_rect.translated(0,20), Qt.AlignmentFlag.AlignLeft, status)
+        if row.get('color_share') is not None:status=f"색상 {row['color_share']:.1f}% · "+status
+        painter.drawText(text_rect.translated(0,20), Qt.AlignmentFlag.AlignLeft,painter.fontMetrics().elidedText(status,Qt.TextElideMode.ElideRight,text_rect.width()))
         if row['favorite']:
             painter.setPen(QColor('#d1c2ff'))
             painter.drawText(photo.adjusted(6,6,-6,-6), Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight, '★')

@@ -110,3 +110,8 @@ Thumbnail version and source path/size/mtime signature invalidate persistent cac
 ## v0.4 multi-source extension
 
 `source_specs` validates data-only manifests; `source_schema` adds schema v3. `source_repository` stores independent permissions, pages, immutable revision evidence and provenance. `page_discovery` extracts declared image candidates; `web_service` mediates permission/robots/host checks, measured probes, explicit preservation and separately permitted similarity analysis. Optional `rendered_page` uses sandboxed Playwright with intercepted resources, not a screenshot source. `source_pane` keeps the source workflow inside the online dialog. Network and local analysis have separate bounded runner queues. Source IDs/categories flow through the virtual gallery and viewer queries. See stage-4-report.md for limits and actual validation scope.
+
+
+## 7-2 분석 계층
+
+`image_analysis` 서비스는 권한·입력 해시를 검증하고 색상/선택 vision 결과를 원자적으로 게시한다. `analysis_schema` v7은 사진 해시 기반 결과, 영역별 색상 bin, Lab RTree, 수동 확인 및 이력 테이블을 추가한다. `analysis_filters`가 현재 권한과 hash/stale 상태를 포함한 공통 SQL을 생성하며 LibraryRepository의 count/page/locate에 같은 조건을 적용한다. `appearance`는 현재 허용된 저장 사진의 영역 색상 후보만 RelatedRepository에 제공한다. 자세한 제한과 측정은 stage-7-2-report.md 참고.

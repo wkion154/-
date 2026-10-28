@@ -8,7 +8,7 @@ from .workers import Tasks
 from .providers.wikimedia import qid
 from .source_pane import SourcePane
 
-KIND_LABELS={'web_scan':'공개 페이지 탐색','web_probe':'허용된 이미지 실측','web_download':'선택 버전 보관','web_analyze':'허용된 유사 후보 검사','discover':'신규 아티스트 탐색','enrich':'아티스트 정보 확인','refresh':'대상 정보 갱신','photos':'사진 목록 갱신','download':'원본 보관'}
+KIND_LABELS={'image_analyze':'색상·구도 분석','web_scan':'공개 페이지 탐색','web_probe':'허용된 이미지 실측','web_download':'선택 버전 보관','web_analyze':'허용된 유사 후보 검사','discover':'신규 아티스트 탐색','enrich':'아티스트 정보 확인','refresh':'대상 정보 갱신','photos':'사진 목록 갱신','download':'원본 보관'}
 
 def job_summary(job):
     if job['message']:return job['message']
@@ -18,6 +18,8 @@ def job_summary(job):
     if 'candidates' in result:return f"신규 후보 {result['candidates']}건 확인"
     if 'indexed' in result:return f"사진 {result['indexed']}건 목록 갱신"
     if 'registered' in result:return f"정보 {result.get('updated',0)}건 · 자동 등록 {result['registered']}건"
+    if result.get('analysis_updated'):return '색상·구도 후보 분석 완료 · '+{'ready':'구도는 검출 후보','disabled':'모델 사용 안 함','not_installed':'구도 모델 미설치','error':'구도 오류 · 색상 결과 사용'}.get(result.get('vision_status'),'')
+    if result.get('reused'):return '변경 없는 분석 결과 재사용'
     if 'possible_duplicates' in result:return f"유사 후보 {result['possible_duplicates']}개"+(' · 최대 200개로 제한 · 동일 사진 확정 아님' if result.get('match_limit_reached') else ' · 동일 사진 확정 아님')
     if result.get('metadata_updated'):return f"대상 정보 갱신 · 소속 후보 {result.get('member_proposals',0)}명"
     return ''

@@ -18,6 +18,8 @@ from .related_dialog import RelatedDialog
 from .related import RelatedRepository
 from .library import LibraryRepository,LibraryService,remote
 from .remote_links import RemoteLinksDialog
+from .analysis_filters import AnalysisFilter
+from .analysis_dialog import AnalysisDialog
 from .page_discovery import clean_url
 
 class MainWindow(QMainWindow):
@@ -25,12 +27,16 @@ class MainWindow(QMainWindow):
     def __init__(self,db,settings):
         super().__init__()
         self.db,self.settings=db,settings
-        self.setWindowTitle('K-IDOL ARCHIVE · 7-1 개발판')
+        self.setWindowTitle('K-IDOL ARCHIVE · 7-2 개발판')
         self.resize(1440,920)
         self.setMinimumSize(820,560)
         self.scope=None
         self.section='all'
         self.selected=None
+        try:self.analysis_filter=AnalysisFilter(**settings.values.get('analysis_filter',{}))
+        except (ValueError,TypeError):self.analysis_filter=AnalysisFilter()
+        if settings.values.get('sort')=='color_share' and not self.analysis_filter.color:settings.values['sort']='newest'
+        self.analysis_dialog=None
         self.library=LibraryRepository(db)
         self.gallery_version=-1
         self.refresh_force=False
@@ -57,6 +63,8 @@ class MainWindow(QMainWindow):
         self.search.setPlaceholderText('그룹, 인물, 별칭, 파일명 검색  ·  Ctrl+K')
         self.search.setClearButtonEnabled(True)
         top.addWidget(self.search,1)
+        self.analysis_toggle=self.button('필터 · 분석',self.toggle_analysis)
+        top.addWidget(self.analysis_toggle)
         self.info_toggle=self.button('정보 패널',self.toggle_info)
         top.addWidget(self.info_toggle)
         self.sync_label=QLabel('준비됨');self.sync_label.setObjectName('muted');top.addWidget(self.sync_label)
@@ -95,7 +103,7 @@ class MainWindow(QMainWindow):
         self.tree.customContextMenuRequested.connect(self.entity_menu)
         side.addWidget(self.tree,1)
         side.addWidget(self.button('멤버 연결 관리',self.memberships))
-        label=QLabel('STAGE 7-1\n로컬 우선 · 원본 보존')
+        label=QLabel('STAGE 7-2\n로컬 우선 · 원본 보존')
         label.setObjectName('muted')
         side.addWidget(label)
         self.splitter.addWidget(self.sidebar)
@@ -134,7 +142,7 @@ class MainWindow(QMainWindow):
         self.count.setObjectName('muted')
         tools.addWidget(self.count,1)
         self.sort=QComboBox()
-        for label,value in [('최신 등록순','newest'),('오래된 등록순','oldest'),('파일명순','name'),('해상도순','resolution')]:self.sort.addItem(label,value)
+        for label,value in [('최신 등록순','newest'),('오래된 등록순','oldest'),('파일명순','name'),('해상도순','resolution'),('색상 점유율순','color_share')]:self.sort.addItem(label,value)
         self.sort.setCurrentIndex(self.sort.findData(settings.values['sort']))
         refresh=self.button('↻',lambda:self.reload(preserve=True))
         refresh.setToolTip('라이브러리 새로고침')
@@ -157,7 +165,7 @@ class MainWindow(QMainWindow):
         self.slider.setToolTip('썸네일 크기')
         tools.addWidget(self.slider)
         content.addLayout(tools)
-        self.model=GalleryModel(LibraryRepository(db,settings.values['library_mode']),self)
+        self.model=GalleryModel(LibraryRepository(db,settings.values['library_mode'],self.analysis_filter),self)
         self.gallery=GalleryView(self.model,settings.cache,self)
         self.gallery.set_size(self.slider.value())
         content.addWidget(self.gallery,1)
@@ -271,12 +279,29 @@ class MainWindow(QMainWindow):
         self.source_filter.setCurrentIndex(max(0,index))
         self.source_filter.blockSignals(False)
 
+    def toggle_analysis(self):
+        if self.analysis_dialog is None:
+            self.analysis_dialog=AnalysisDialog(self.online_service,self.online_runner,self.analysis_filter,self)
+            self.analysis_dialog.applied.connect(self.apply_analysis_filters)
+            self.analysis_dialog.changed.connect(self.remote_changed)
+        if self.analysis_dialog.isVisible():self.analysis_dialog.hide()
+        else:
+            self.analysis_dialog.show()
+            self.analysis_dialog.set_entry(self.selected['id'] if self.selected else None)
+            self.analysis_dialog.raise_()
+
+    def apply_analysis_filters(self,filters):
+        self.analysis_filter=filters;self.settings.values['analysis_filter']=filters.dictionary()
+        self.analysis_toggle.setText('필터 · 적용 중' if filters.active else '필터 · 분석')
+        if self.sort.currentData()=='color_share' and not filters.color:self.sort.setCurrentIndex(0)
+        self.reload()
+
     def library_mode_changed(self):
         self.settings.values['library_mode']=self.library_mode.currentData()
         self.reload()
 
     def remote_changed(self):
-        if self.library_mode.currentData()!='local' and not self.remote_timer.isActive():self.remote_timer.start()
+        if (self.library_mode.currentData()!='local' or self.analysis_filter.active) and not self.remote_timer.isActive():self.remote_timer.start()
 
     def check_remote_refresh(self):
         force=self.refresh_force;self.refresh_force=False
@@ -381,7 +406,9 @@ class MainWindow(QMainWindow):
         self.info_text.setText('사진을 선택하면 보관 상태와 출처 정보를 확인할 수 있습니다.')
         for b in (self.fav_button,self.associate_button,self.relink_button,self.related_button):b.setEnabled(False)
         self.preserve_button.setEnabled(False);self.source_button.setEnabled(False)
-        self.model.db=LibraryRepository(self.db,self.library_mode.currentData())
+        if self.analysis_dialog is not None and self.analysis_dialog.isVisible():self.analysis_dialog.set_entry(None)
+        self.empty.setText('조건에 맞는 사진이 없습니다\n\n색상/구도 분석 완료와 권한을 확인하거나 미분석 포함·필터 초기화를 사용하세요.' if self.analysis_filter.active else '아직 사진이 없습니다\n\n사진을 가져오거나 그룹과 인물을 먼저 등록해 보세요.')
+        self.model.db=LibraryRepository(self.db,self.library_mode.currentData(),self.analysis_filter)
         self.model.reload(self.scope,self.search.text(),self.sort.currentData(),source_filter=self.selected_source_filter())
     def loaded(self,total):
         if self.bookmark is not None and not self.model.loading:
@@ -410,6 +437,8 @@ class MainWindow(QMainWindow):
         self.refresh_entities()
         self.reload()
     def sort_changed(self):
+        if self.sort.currentData()=='color_share' and not self.analysis_filter.color:
+            self.statusBar().showMessage('색상 필터를 먼저 선택하세요.',6000);self.sort.setCurrentIndex(0);return
         self.reload()
     def toggle_sidebar(self):
         self.sidebar_enabled=not self.sidebar_enabled
@@ -490,6 +519,7 @@ class MainWindow(QMainWindow):
         row=index.data(Qt.ItemDataRole.UserRole)
         if row is None:return
         self.selected=row
+        if self.analysis_dialog is not None and self.analysis_dialog.isVisible():self.analysis_dialog.set_entry(row['id'])
         self.info_name.setText(row['name'])
         self.fav_button.setText('★ 즐겨찾기 해제' if row['favorite'] else '☆ 즐겨찾기')
         for b in (self.fav_button,self.associate_button,self.relink_button,self.related_button):b.setEnabled(True)
@@ -625,6 +655,9 @@ class MainWindow(QMainWindow):
         sizes=self.settings.values.get('panels')
         if isinstance(sizes,list) and len(sizes)==3 and all(isinstance(n,int) and n>=0 for n in sizes):self.splitter.setSizes(sizes)
     def closeEvent(self,event):
+        if self.analysis_dialog is not None and self.analysis_dialog.saving:
+            self.statusBar().showMessage('분석 확인 기록을 저장한 뒤 종료합니다.');event.ignore();QTimer.singleShot(80,self.close);return
+        if self.analysis_dialog is not None:self.analysis_dialog.shutdown()
         if self.import_job:
             self.import_cancel.set()
             self.statusBar().showMessage('현재 파일 작업을 마친 뒤 종료합니다.')

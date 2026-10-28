@@ -133,14 +133,15 @@ class OnlineRepository:
             else:conn.execute('UPDATE remote_images SET thumbnail_path=? WHERE id=?',(str(path),identity))
 
     def _source_key(self,conn,kind,payload):
+        if kind=='image_analyze':return 'analysis-local'
         if not kind.startswith('web_'):return 'wikimedia'
         table,column,key=('source_pages','source_id','page_id') if kind=='web_scan' else ('web_images','source_id','item_id')
         row=conn.execute(f'SELECT {column} FROM {table} WHERE id=?',(payload.get(key),)).fetchone()
         return 'web:'+(row[0] if row else 'unknown')
 
     def enqueue(self,kind,payload,key=None,force=False,refresh_after=24*3600):
-        if kind not in ('discover','enrich','refresh','photos','download','web_scan','web_probe','web_download','web_analyze'):raise ValueError('지원하지 않는 갱신 작업')
-        key=key or kind+':'+str(payload.get('target_id',payload.get('remote_id',payload.get('item_id',payload.get('page_id','all')))))
+        if kind not in ('discover','enrich','refresh','photos','download','web_scan','web_probe','web_download','web_analyze','image_analyze'):raise ValueError('지원하지 않는 갱신 작업')
+        key=key or kind+':'+str(payload.get('entry_id',payload.get('target_id',payload.get('remote_id',payload.get('item_id',payload.get('page_id','all'))))))
         now=self.clock()
         with self.db.connect() as conn:
             conn.execute('BEGIN IMMEDIATE')
@@ -161,10 +162,10 @@ class OnlineRepository:
         now=self.clock()
         with self.db.connect() as conn:
             conn.execute('BEGIN IMMEDIATE')
-            kind_filter="kind='web_analyze'" if queue=='analysis' else "kind<>'web_analyze'"
+            kind_filter="kind IN ('web_analyze','image_analyze')" if queue=='analysis' else "kind NOT IN ('web_analyze','image_analyze')"
             clause=' AND j.id=?' if identity else ''
             args=(now,now,identity) if identity else (now,now)
-            row=conn.execute("SELECT j.* FROM sync_jobs j JOIN sync_sources s ON s.source_key=j.source_key WHERE j.state IN ('queued','retry') AND j.next_run<=? AND (s.next_run<=? OR j.kind='web_analyze') AND j."+kind_filter+" AND NOT EXISTS(SELECT 1 FROM sync_jobs r WHERE r.source_key=j.source_key AND r.state='running' AND r."+kind_filter+")"+clause+" ORDER BY s.last_claim,CASE j.kind WHEN 'download' THEN 0 WHEN 'web_download' THEN 0 WHEN 'web_probe' THEN 1 WHEN 'refresh' THEN 1 WHEN 'photos' THEN 2 WHEN 'enrich' THEN 3 ELSE 4 END,j.updated,j.id LIMIT 1",args).fetchone()
+            row=conn.execute("SELECT j.* FROM sync_jobs j JOIN sync_sources s ON s.source_key=j.source_key WHERE j.state IN ('queued','retry') AND j.next_run<=? AND (s.next_run<=? OR j.kind IN ('web_analyze','image_analyze')) AND j."+kind_filter+" AND NOT EXISTS(SELECT 1 FROM sync_jobs r WHERE r.source_key=j.source_key AND r.state='running' AND r."+kind_filter+")"+clause+" ORDER BY s.last_claim,CASE j.kind WHEN 'download' THEN 0 WHEN 'web_download' THEN 0 WHEN 'web_probe' THEN 1 WHEN 'refresh' THEN 1 WHEN 'photos' THEN 2 WHEN 'enrich' THEN 3 ELSE 4 END,j.updated,j.id LIMIT 1",args).fetchone()
             if not row:return None
             token=uuid.uuid4().hex
             conn.execute("UPDATE sync_jobs SET state='running',claim_token=?,attempts=attempts+1,updated=? WHERE id=?",(token,now,row['id']))
@@ -182,7 +183,7 @@ class OnlineRepository:
             if not row:return False
             conn.execute('UPDATE sync_jobs SET state=?,claim_token=NULL,message=?,result=?,payload=COALESCE(?,payload),next_run=?,updated=?,attempts=CASE WHEN ? THEN 0 WHEN ? THEN MAX(0,attempts-1) ELSE attempts END WHERE id=?',
                          (state,message,json.dumps(result) if result is not None else None,json.dumps(payload) if payload is not None else None,self.clock()+delay,self.clock(),int(state=='queued' and result is not None),int(refund_attempt),identity))
-            if delay>0 and row['kind']!='web_analyze':
+            if delay>0 and row['kind'] not in ('web_analyze','image_analyze'):
                 conn.execute('UPDATE sync_sources SET next_run=MAX(next_run,?) WHERE source_key=?',(self.clock()+delay,row['source_key']))
             return True
 

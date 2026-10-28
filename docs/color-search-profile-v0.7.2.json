@@ -1,0 +1,23 @@
+{
+  "scope": "Linux SQLite, four precomputed synthetic colors per photo. Query includes current per-photo analysis permission, color-range aggregation, count and descending occupancy. No file decoding, actual model accuracy or physical display FPS measured.",
+  "results": [
+    {
+      "metadata_count": 10000,
+      "color_bins": 40000,
+      "incremental_build_ms": 992.57,
+      "first_page_with_count_ms": 52.68,
+      "matched": 3750,
+      "returned": 256,
+      "peak_rss_mib": 48.15
+    },
+    {
+      "metadata_count": 100000,
+      "color_bins": 400000,
+      "incremental_build_ms": 9788.42,
+      "first_page_with_count_ms": 502.7,
+      "matched": 37500,
+      "returned": 256,
+      "peak_rss_mib": 56.45
+    }
+  ]
+}

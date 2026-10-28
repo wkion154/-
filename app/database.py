@@ -36,10 +36,10 @@ class Database:
         from .stability_schema import SCHEMA_V5
         with self.connect() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version > 6:
+            if version > 7:
                 raise RuntimeError('이 라이브러리는 더 최신 버전의 앱에서 생성되었습니다.')
             # SQLite backup includes WAL contents; never replace an existing user backup.
-            if version in (1,2,3,4,5):
+            if version in (1,2,3,4,5,6):
                 backup_path = self.path.with_name(self.path.name+f'.v{version}-'+uuid.uuid4().hex[:12]+'.bak')
                 destination = sqlite3.connect(backup_path)
                 try:
@@ -73,7 +73,11 @@ class Database:
                 from .hybrid_schema import statements
                 for statement in statements():db.execute(statement)
                 db.execute('INSERT INTO schema_migrations VALUES(6,?)',(time.time(),))
-            db.execute('PRAGMA user_version=6')
+            if version < 7:
+                from .analysis_schema import migrate
+                migrate(db)
+                db.execute('INSERT INTO schema_migrations VALUES(7,?)',(time.time(),))
+            db.execute('PRAGMA user_version=7')
 
     @contextmanager
     def connect(self):
@@ -193,9 +197,10 @@ class Database:
         clause = ' WHERE ' + ' AND '.join(where) if where else ''
         return clause, args, orders.get(sort,orders['newest'])
 
-    def query(self, scope=None, search='', sort='newest', offset=0, limit=256, count=True, source_filter=None):
+    def query(self, scope=None, search='', sort='newest', offset=0, limit=256, count=True, source_filter=None, cancelled=None):
         clause,args,order = self._selection(scope,search,sort,source_filter)
         with self.connect() as db:
+            if cancelled is not None:db.set_progress_handler(lambda:int(cancelled.is_set()),1000)
             total = db.execute('SELECT COUNT(*) FROM assets a'+clause, args).fetchone()[0] if count else None
             rows = [dict(r) for r in db.execute('SELECT a.* FROM assets a'+clause+' ORDER BY '+order+' LIMIT ? OFFSET ?', (*args, limit, offset))]
             return rows, total

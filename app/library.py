@@ -36,9 +36,11 @@ def group_links(entry='e.id'):
 
 class LibraryRepository:
     MODES=('all','local','online')
-    def __init__(self,db,mode='all'):
+    def __init__(self,db,mode='all',filters=None):
         if mode not in self.MODES:raise ValueError('지원하지 않는 라이브러리 보기입니다.')
         self.db,self.mode=db,mode
+        from .analysis_filters import AnalysisFilter
+        self.filters=filters or AnalysisFilter()
 
     def version(self):
         with self.db.connect() as c:return c.execute('SELECT version FROM gallery_version WHERE id=1').fetchone()[0]
@@ -72,22 +74,31 @@ class LibraryRepository:
             term='%'+search.strip().replace('!','!!').replace('%','!%').replace('_','!_')+'%'
             where.append(f"(e.name LIKE ? ESCAPE '!' OR EXISTS(SELECT 1 FROM persons p WHERE p.id IN {people} AND (p.name LIKE ? ESCAPE '!' OR p.aliases LIKE ? ESCAPE '!')) OR EXISTS(SELECT 1 FROM groups g WHERE g.id IN {groups} AND (g.name LIKE ? ESCAPE '!' OR g.aliases LIKE ? ESCAPE '!')) OR EXISTS(SELECT 1 FROM memberships m JOIN groups g ON g.id=m.group_id WHERE m.person_id IN {people} AND (g.name LIKE ? ESCAPE '!' OR g.aliases LIKE ? ESCAPE '!')))")
             args.extend((term,)*7)
+        extra,extra_args=self.filters.clauses();where.extend(extra);args.extend(extra_args)
         orders={'newest':'e.registered DESC,e.id','oldest':'e.registered,e.id','name':'e.name COLLATE NOCASE,e.id','resolution':'(e.width*e.height) DESC,e.id'}
-        return ' WHERE '+' AND '.join(where),args,orders.get(sort,orders['newest'])
+        order=orders.get(sort,orders['newest'])
+        if sort=='color_share' and self.filters.color:order='COALESCE((SELECT share FROM color_hits h WHERE h.entry_id=e.id),-1) DESC,e.registered DESC,e.id'
+        return ' WHERE '+' AND '.join(where),args,order
 
-    def query(self,scope=None,search='',sort='newest',offset=0,limit=256,count=True,source_filter=None):
+    def query(self,scope=None,search='',sort='newest',offset=0,limit=256,count=True,source_filter=None,cancelled=None):
+        prefix,prefix_args=self.filters.prefix()
         clause,args,order=self._selection(scope,search,sort,source_filter)
         order_index={'newest':'gallery_newest','oldest':'gallery_oldest','name':'gallery_name','resolution':'gallery_pixels'}.get(sort,'gallery_newest')
         permitted=permission_sql('e.source_id','e.id','thumbnail')
         thumbnail=f"CASE WHEN e.kind='asset' THEN {asset_permission('thumbnail')} WHEN e.kind='commons' THEN ({permitted} AND {REVIEW} AND e.license_status='eligible' AND e.thumbnail_url IS NOT NULL) ELSE ({permitted} AND (e.has_preview=1 OR e.role='thumbnail')) END"
+        from .analysis_filters import analysis_permission_sql
+        known="EXISTS(SELECT 1 FROM image_analysis x WHERE x.entry_id=e.id AND x.sha256=e.sha256 AND x.stale=0 AND "+analysis_permission_sql()+") AND EXISTS(SELECT 1 FROM analysis_colors c WHERE c.entry_id=e.id AND c.region='"+self.filters.region+"')"
+        share="COALESCE((SELECT share FROM color_hits h WHERE h.entry_id=e.id),CASE WHEN "+known+" THEN 0 ELSE NULL END)" if self.filters.color else 'NULL'
         with self.db.connect() as c:
-            total=c.execute('SELECT COUNT(*) FROM gallery_items e INDEXED BY gallery_visibility'+clause,args).fetchone()[0] if count else None
-            rows=[dict(r) for r in c.execute(f"SELECT e.*,COALESCE(a.path,'') AS path,COALESCE(a.managed,0) AS managed,{NEEDS_REVIEW} AS requires_review,{thumbnail} AS thumbnail_allowed FROM (SELECT e.* FROM gallery_items e INDEXED BY "+order_index+clause+" ORDER BY "+order+" LIMIT ? OFFSET ?) e LEFT JOIN assets a ON e.kind='asset' AND a.id=e.id ORDER BY "+order,(*args,limit,offset))]
+            if cancelled is not None:c.set_progress_handler(lambda:int(cancelled.is_set()),1000)
+            total=c.execute(prefix+'SELECT COUNT(*) FROM gallery_items e INDEXED BY gallery_visibility'+clause,(*prefix_args,*args)).fetchone()[0] if count else None
+            rows=[dict(r) for r in c.execute(prefix+f"SELECT {share} AS color_share,e.*,COALESCE(a.path,'') AS path,COALESCE(a.managed,0) AS managed,{NEEDS_REVIEW} AS requires_review,{thumbnail} AS thumbnail_allowed FROM (SELECT e.* FROM gallery_items e INDEXED BY "+order_index+clause+" ORDER BY "+order+" LIMIT ? OFFSET ?) e LEFT JOIN assets a ON e.kind='asset' AND a.id=e.id ORDER BY "+order,(*prefix_args,*args,limit,offset))]
         for row in rows:
             row['thumbnail_key']=row['sha256'] if row['kind']=='asset' else row['id']+'@'+str(row['sha256'] or row['image_url'])
         return rows,total
 
     def locate(self,identity,scope=None,search='',sort='newest',source_filter=None):
+        prefix,prefix_args=self.filters.prefix()
         clause,args,order=self._selection(scope,search,sort,source_filter)
         order_index={'newest':'gallery_newest','oldest':'gallery_oldest','name':'gallery_name','resolution':'gallery_pixels'}.get(sort,'gallery_newest')
         with self.db.connect() as c:
@@ -95,7 +106,7 @@ class LibraryRepository:
             if row and row['kind']!='asset':
                 asset=c.execute('SELECT id FROM assets WHERE id=?',(row['linked_asset_id'],)).fetchone()
                 if asset:identity=asset['id']
-            result=c.execute('SELECT position FROM (SELECT e.id,ROW_NUMBER() OVER (ORDER BY '+order+')-1 AS position FROM gallery_items e INDEXED BY '+order_index+clause+') WHERE id=?',(*args,identity)).fetchone()
+            result=c.execute(prefix+'SELECT position FROM (SELECT e.id,ROW_NUMBER() OVER (ORDER BY '+order+')-1 AS position FROM gallery_items e INDEXED BY '+order_index+clause+') WHERE id=?',(*prefix_args,*args,identity)).fetchone()
             return result['position'] if result else None
 
     def entry(self,identity):

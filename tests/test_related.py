@@ -139,7 +139,7 @@ def test_v3_migration_backup_and_transactional_failure(tmp_path,monkeypatch):
     with sqlite3.connect(backups[0]) as c:assert c.execute('PRAGMA user_version').fetchone()[0]==3
     monkeypatch.setattr(schema,'SCHEMA_V4',original);db=Database(path)
     assert db.entities()['groups'][0]['name']=='Original'
-    with db.connect() as c:assert c.execute('PRAGMA user_version').fetchone()[0]==6
+    with db.connect() as c:assert c.execute('PRAGMA user_version').fetchone()[0]==7
 
 
 def test_related_ui_async_results_viewer_signal_and_shutdown(qtbot,db,settings,tmp_path):
