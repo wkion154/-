@@ -132,38 +132,59 @@ class OnlineRepository:
             if asset_id:conn.execute('UPDATE remote_images SET local_asset_id=? WHERE id=?',(asset_id,identity))
             else:conn.execute('UPDATE remote_images SET thumbnail_path=? WHERE id=?',(str(path),identity))
 
+    def _source_key(self,conn,kind,payload):
+        if not kind.startswith('web_'):return 'wikimedia'
+        table,column,key=('source_pages','source_id','page_id') if kind=='web_scan' else ('web_images','source_id','item_id')
+        row=conn.execute(f'SELECT {column} FROM {table} WHERE id=?',(payload.get(key),)).fetchone()
+        return 'web:'+(row[0] if row else 'unknown')
+
     def enqueue(self,kind,payload,key=None,force=False,refresh_after=24*3600):
         if kind not in ('discover','enrich','refresh','photos','download','web_scan','web_probe','web_download','web_analyze'):raise ValueError('지원하지 않는 갱신 작업')
         key=key or kind+':'+str(payload.get('target_id',payload.get('remote_id',payload.get('item_id',payload.get('page_id','all')))))
         now=self.clock()
         with self.db.connect() as conn:
             conn.execute('BEGIN IMMEDIATE')
+            source=self._source_key(conn,kind,payload)
+            conn.execute('INSERT OR IGNORE INTO sync_sources(source_key) VALUES(?)',(source,))
             row=conn.execute('SELECT * FROM sync_jobs WHERE job_key=?',(key,)).fetchone()
             if row:
                 if row['state'] in ACTIVE:return row['id']
                 if not force and (row['state']!='done' or now-row['updated']<refresh_after):return row['id']
-                conn.execute("UPDATE sync_jobs SET state='queued',payload=?,attempts=0,next_run=?,updated=?,message='',result=NULL WHERE id=?",(json.dumps(payload),now,now,row['id']))
+                conn.execute("UPDATE sync_jobs SET state='queued',payload=?,source_key=?,claim_token=NULL,attempts=0,next_run=?,updated=?,message='',result=NULL WHERE id=?",(json.dumps(payload),source,now,now,row['id']))
                 return row['id']
             identity=uuid.uuid4().hex
-            conn.execute('INSERT INTO sync_jobs(id,job_key,kind,payload,next_run,updated) VALUES(?,?,?,?,?,?)',(identity,key,kind,json.dumps(payload),now,now))
+            conn.execute('INSERT INTO sync_jobs(id,job_key,kind,payload,next_run,updated,source_key) VALUES(?,?,?,?,?,?,?)',(identity,key,kind,json.dumps(payload),now,now,source))
             return identity
 
     def claim(self,queue='network',identity=None):
+        if queue not in ('network','analysis'):raise ValueError('알 수 없는 작업 큐입니다.')
         now=self.clock()
         with self.db.connect() as conn:
             conn.execute('BEGIN IMMEDIATE')
-            queue_clause=" AND kind='web_analyze'" if queue=='analysis' else " AND kind<>'web_analyze'"
-            if identity:queue_clause+=' AND id=?'
-            arguments=(now,identity) if identity else (now,)
-            row=conn.execute("SELECT * FROM sync_jobs WHERE state IN ('queued','retry') AND next_run<=?"+queue_clause+" ORDER BY CASE kind WHEN 'download' THEN 0 WHEN 'web_download' THEN 0 WHEN 'web_probe' THEN 1 WHEN 'refresh' THEN 1 WHEN 'photos' THEN 2 WHEN 'enrich' THEN 3 ELSE 4 END,updated LIMIT 1",arguments).fetchone()
+            kind_filter="kind='web_analyze'" if queue=='analysis' else "kind<>'web_analyze'"
+            clause=' AND j.id=?' if identity else ''
+            args=(now,now,identity) if identity else (now,now)
+            row=conn.execute("SELECT j.* FROM sync_jobs j JOIN sync_sources s ON s.source_key=j.source_key WHERE j.state IN ('queued','retry') AND j.next_run<=? AND (s.next_run<=? OR j.kind='web_analyze') AND j."+kind_filter+" AND NOT EXISTS(SELECT 1 FROM sync_jobs r WHERE r.source_key=j.source_key AND r.state='running' AND r."+kind_filter+")"+clause+" ORDER BY s.last_claim,CASE j.kind WHEN 'download' THEN 0 WHEN 'web_download' THEN 0 WHEN 'web_probe' THEN 1 WHEN 'refresh' THEN 1 WHEN 'photos' THEN 2 WHEN 'enrich' THEN 3 ELSE 4 END,j.updated,j.id LIMIT 1",args).fetchone()
             if not row:return None
-            conn.execute("UPDATE sync_jobs SET state='running',attempts=attempts+1,updated=? WHERE id=?",(now,row['id']))
-            result=dict(row);result['attempts']+=1;result['payload']=json.loads(result['payload'])
+            token=uuid.uuid4().hex
+            conn.execute("UPDATE sync_jobs SET state='running',claim_token=?,attempts=attempts+1,updated=? WHERE id=?",(token,now,row['id']))
+            if queue=='network':conn.execute('UPDATE sync_sources SET last_claim=(SELECT COALESCE(MAX(last_claim),0)+1 FROM sync_sources) WHERE source_key=?',(row['source_key'],))
+            result=dict(row);result['attempts']+=1;result['payload']=json.loads(result['payload']);result['claim_token']=token
             return result
 
-    def finish(self,identity,state,message='',result=None,payload=None,delay=0):
+    def finish(self,identity,state,message='',result=None,payload=None,delay=0,claim_token=None,refund_attempt=False):
+        if state not in ('queued','retry','done','failed','blocked','cancelled'):raise ValueError('알 수 없는 작업 상태입니다.')
         with self.db.connect() as conn:
-            conn.execute('UPDATE sync_jobs SET state=?,message=?,result=?,payload=COALESCE(?,payload),next_run=?,updated=?,attempts=CASE WHEN ? THEN 0 ELSE attempts END WHERE id=?',(state,message,json.dumps(result) if result is not None else None,json.dumps(payload) if payload is not None else None,self.clock()+delay,self.clock(),int(state=='queued' and result is not None),identity))
+            conn.execute('BEGIN IMMEDIATE')
+            clause=" AND claim_token=? AND state='running'" if claim_token is not None else ''
+            args=(identity,claim_token) if claim_token is not None else (identity,)
+            row=conn.execute('SELECT source_key,kind FROM sync_jobs WHERE id=?'+clause,args).fetchone()
+            if not row:return False
+            conn.execute('UPDATE sync_jobs SET state=?,claim_token=NULL,message=?,result=?,payload=COALESCE(?,payload),next_run=?,updated=?,attempts=CASE WHEN ? THEN 0 WHEN ? THEN MAX(0,attempts-1) ELSE attempts END WHERE id=?',
+                         (state,message,json.dumps(result) if result is not None else None,json.dumps(payload) if payload is not None else None,self.clock()+delay,self.clock(),int(state=='queued' and result is not None),int(refund_attempt),identity))
+            if delay>0 and row['kind']!='web_analyze':
+                conn.execute('UPDATE sync_sources SET next_run=MAX(next_run,?) WHERE source_key=?',(self.clock()+delay,row['source_key']))
+            return True
 
     def job_state(self,identity):
         with self.db.connect() as conn:
@@ -175,10 +196,10 @@ class OnlineRepository:
 
     def retry(self,identity):
         with self.db.connect() as conn:
-            conn.execute("UPDATE sync_jobs SET state='queued',attempts=0,next_run=?,message='' WHERE id=? AND state IN ('failed','blocked','cancelled','retry')",(self.clock(),identity))
+            conn.execute("UPDATE sync_jobs SET state='queued',claim_token=NULL,attempts=0,next_run=?,message='' WHERE id=? AND state IN ('failed','blocked','cancelled','retry')",(self.clock(),identity))
 
     def recover(self):
-        with self.db.connect() as conn:conn.execute("UPDATE sync_jobs SET state='retry',next_run=?,message='중단된 작업을 재개합니다.' WHERE state='running'",(self.clock(),))
+        with self.db.connect() as conn:conn.execute("UPDATE sync_jobs SET state='retry',claim_token=NULL,attempts=MAX(0,attempts-1),next_run=?,message='중단된 작업을 재개합니다.' WHERE state='running'",(self.clock(),))
 
     def schedule(self):
         self.enqueue('discover',{})

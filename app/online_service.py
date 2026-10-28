@@ -80,26 +80,29 @@ class OnlineService:
             if not job['kind'].startswith('web_'):self.require_review()
             result,next_payload=self.execute(job,cancelled)
             state='queued' if next_payload is not None else 'done'
-            self.repo.finish(job['id'],state,result=result,payload=next_payload)
+            self.repo.finish(job['id'],state,result=result,payload=next_payload,claim_token=job['claim_token'])
         except Cancelled:
             state='queued'
-            self.repo.finish(job['id'],'queued','작업을 중단했습니다. 다음 실행에서 이어갑니다.')
+            self.repo.finish(job['id'],'queued','작업을 중단했습니다. 다음 실행에서 이어갑니다.',claim_token=job['claim_token'],refund_attempt=True)
         except RemoteError as error:
             if error.blocked:state,delay='blocked',0
             elif error.retryable and job['attempts']<4:
                 state='retry';delay=max(15*2**(job['attempts']-1),error.retry_after or 0)
             else:state,delay='failed',0
-            self.repo.finish(job['id'],state,str(error),delay=delay)
+            self.repo.finish(job['id'],state,str(error),delay=max(delay,error.retry_after or 0),claim_token=job['claim_token'])
         except Exception as error:
             import logging
             logging.exception('Online job failed')
             state='failed'
-            self.repo.finish(job['id'],'failed',str(error))
+            self.repo.finish(job['id'],'failed',str(error),claim_token=job['claim_token'])
         return dict(id=job['id'],kind=job['kind'],state=state,library_changed=state=='done' and (job['kind'] in ('download','web_download') or bool(result and result.get('registered'))))
 
     def execute(self,job,cancelled):
         kind,payload=job['kind'],job['payload']
-        if kind.startswith('web_'):return self.web.execute(job,cancelled),None
+        if kind.startswith('web_'):
+            result=self.web.execute(job,cancelled)
+            continuation=(payload|{'after':result['next_cursor'],'analysis_sha':result['analysis_sha']}) if kind=='web_analyze' and result.get('next_cursor') else None
+            return result,continuation
         if kind=='discover':
             candidates,cursor=self.provider.discover(payload.get('cursor'),cancelled)
             for candidate in candidates:self.repo.candidate(candidate)

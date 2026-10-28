@@ -12,14 +12,8 @@ from urllib.error import HTTPError, URLError
 HOSTS = frozenset({'commons.wikimedia.org','upload.wikimedia.org','www.wikidata.org','query.wikidata.org',
                    'www.mediawiki.org','foundation.wikimedia.org','doc.wikimedia.org'})
 
-class Cancelled(Exception):
-    pass
-
-class RemoteError(Exception):
-    def __init__(self,message,retryable=False,retry_after=None,blocked=False,status=None):
-        super().__init__(message)
-        self.retryable,self.retry_after,self.blocked=retryable,retry_after,blocked
-        self.status=status
+from .http_errors import RemoteError,Cancelled
+from ..request_pacing import HOST_PACER
 
 
 def validate_url(url,allowed_hosts=HOSTS,public_only=False):
@@ -37,31 +31,32 @@ def validate_url(url,allowed_hosts=HOSTS,public_only=False):
     return url
 
 class SafeRedirect(HTTPRedirectHandler):
-    def __init__(self,allowed_hosts=HOSTS,public_only=False):
-        super().__init__();self.allowed_hosts=allowed_hosts;self.public_only=public_only
+    def __init__(self,allowed_hosts=HOSTS,public_only=False,pacer=HOST_PACER,interval=1.1):
+        super().__init__();self.allowed_hosts=allowed_hosts;self.public_only=public_only;self.pacer=pacer;self.interval=interval
     def redirect_request(self,req,fp,code,msg,headers,newurl):
         validate_url(newurl,self.allowed_hosts,self.public_only)
-        return super().redirect_request(req,fp,code,msg,headers,newurl)
+        redirected=super().redirect_request(req,fp,code,msg,headers,newurl)
+        if redirected is not None:
+            cancelled=getattr(req,'archive_cancelled',threading.Event())
+            self.pacer.wait(urlsplit(newurl).hostname,self.interval,cancelled)
+            redirected.archive_cancelled=cancelled
+        return redirected
 
 class HttpClient:
     """Proxy/CA settings inherited; serial API requests, no auth or TLS bypass."""
-    def __init__(self,interval=1.1,timeout=12,allowed_hosts=HOSTS,public_only=False):
+    def __init__(self,interval=1.1,timeout=12,allowed_hosts=HOSTS,public_only=False,pacer=HOST_PACER):
         self.interval,self.timeout=interval,timeout
         self.allowed_hosts=frozenset(allowed_hosts)
         self.public_only=public_only
-        self.last={}
-        self.lock=threading.Lock()
-        self.opener=build_opener(HTTPSHandler(context=ssl.create_default_context()),SafeRedirect(self.allowed_hosts,public_only))
+        self.pacer=pacer
+        self.opener=build_opener(HTTPSHandler(context=ssl.create_default_context()),SafeRedirect(self.allowed_hosts,public_only,pacer,interval))
 
     def open(self,url,cancelled,accept='application/json'):
         validate_url(url,self.allowed_hosts,self.public_only)
         host=urlsplit(url).hostname
-        with self.lock:
-            wait=max(0,self.interval-(time.monotonic()-self.last.get(host,0)))
-            if cancelled.wait(wait):raise Cancelled()
-            self.last[host]=time.monotonic()
-        if cancelled.is_set():raise Cancelled()
-        request=Request(url,headers={'User-Agent':'K-IDOL-ARCHIVE/0.5.0 (desktop photo archive)', 'Accept':accept})
+        self.pacer.wait(host,self.interval,cancelled)
+        request=Request(url,headers={'User-Agent':'K-IDOL-ARCHIVE/0.6.0 (desktop photo archive)', 'Accept':accept})
+        request.archive_cancelled=cancelled
         try:
             return self.opener.open(request,timeout=self.timeout)
         except HTTPError as error:
@@ -73,6 +68,7 @@ class HttpClient:
                 except ValueError:
                     try:delay=max(0,email.utils.parsedate_to_datetime(raw).timestamp()-time.time())
                     except (TypeError,ValueError,OverflowError):pass
+            if delay is not None:self.pacer.cooldown(host,delay)
             error.close()
             raise RemoteError(f'제공처 HTTP {status}',retryable=status in (408,429,500,502,503,504),retry_after=delay,blocked=status in (401,403),status=status) from None
         except (URLError,TimeoutError,OSError) as error:

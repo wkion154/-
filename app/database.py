@@ -33,12 +33,13 @@ class Database:
         from .online_schema import SCHEMA_V2
         from .source_schema import SCHEMA_V3
         from .related_schema import SCHEMA_V4
+        from .stability_schema import SCHEMA_V5
         with self.connect() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version > 4:
+            if version > 5:
                 raise RuntimeError('이 라이브러리는 더 최신 버전의 앱에서 생성되었습니다.')
             # SQLite backup includes WAL contents; never replace an existing user backup.
-            if version in (1,2,3):
+            if version in (1,2,3,4):
                 backup_path = self.path.with_name(self.path.name+f'.v{version}-'+uuid.uuid4().hex[:12]+'.bak')
                 destination = sqlite3.connect(backup_path)
                 try:
@@ -62,7 +63,13 @@ class Database:
                 for statement in SCHEMA_V4.split(';'):
                     if statement.strip():db.execute(statement)
                 db.execute('INSERT INTO schema_migrations VALUES(4,?)',(time.time(),))
-            db.execute('PRAGMA user_version=4')
+            if version < 5:
+                for statement in SCHEMA_V5.split(';'):
+                    if statement.strip():db.execute(statement)
+                from .perceptual import backfill
+                backfill(db)
+                db.execute('INSERT INTO schema_migrations VALUES(5,?)',(time.time(),))
+            db.execute('PRAGMA user_version=5')
 
     @contextmanager
     def connect(self):
@@ -128,6 +135,7 @@ class Database:
 
     def register(self, metadata, person=None, group=None, origin='local'):
         with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
             row = db.execute('SELECT id FROM assets WHERE sha256=?', (metadata['sha256'],)).fetchone()
             duplicate = row is not None
             identity = row['id'] if duplicate else uuid.uuid4().hex

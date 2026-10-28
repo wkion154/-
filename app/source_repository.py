@@ -73,13 +73,14 @@ class SourceRepository:
         result.update({row['operation']:dict(state=row['state'],evidence=json.loads(row['evidence'])) for row in rows})
         return result
 
+    def allowed_in(self,conn,identity,operation,resource=None):
+        if operation not in OPERATIONS:raise ValueError('알 수 없는 권한 항목입니다.')
+        resource_clause=" AND EXISTS(SELECT 1 FROM resource_permissions r WHERE r.resource_id=? AND r.operation=s.operation AND r.state='allowed')" if resource is not None else ''
+        arguments=(identity,operation,resource) if resource is not None else (identity,operation)
+        return conn.execute("SELECT 1 FROM source_profiles p JOIN source_permissions s ON s.source_id=p.id AND s.profile_digest=p.digest WHERE p.id=? AND p.enabled=1 AND p.adapter<>'candidate' AND s.operation=? AND s.state='allowed'"+resource_clause,arguments).fetchone() is not None
+
     def allowed(self,identity,operation,resource=None):
-        spec=self.spec(identity)
-        with self.db.connect() as conn:
-            row=conn.execute('SELECT enabled FROM source_profiles WHERE id=?',(identity,)).fetchone()
-        if not row or not row['enabled'] or spec.adapter=='candidate':return False
-        if self.permissions(identity)[operation]['state']!='allowed':return False
-        return resource is None or self.permissions(identity,resource)[operation]['state']=='allowed'
+        with self.db.connect() as conn:return self.allowed_in(conn,identity,operation,resource)
 
     def require(self,identity,operation,resource=None):
         if not self.allowed(identity,operation,resource):
@@ -140,6 +141,7 @@ class SourceRepository:
             old=conn.execute('SELECT sha256 FROM web_images WHERE id=?',(identity,)).fetchone()
             changed=bool(old['sha256'] and old['sha256']!=meta['sha256'])
             if changed:
+                conn.execute('DELETE FROM perceptual_features WHERE item_id=?',(identity,))
                 conn.execute("UPDATE resource_permissions SET state='review',evidence=? WHERE resource_id=? AND operation<>'metadata_search'",(json.dumps({'note':'File content changed; review the new revision.'}),'web:'+identity))
                 conn.execute('UPDATE web_images SET local_asset_id=NULL,dhash=NULL WHERE id=?',(identity,))
             conn.execute('UPDATE web_images SET width=?,height=?,size=?,mime=?,sha256=?,cache_path=?,dhash=COALESCE(?,dhash),updated=? WHERE id=?',(meta['width'],meta['height'],meta['size'],meta.get('mime',meta['format']),meta['sha256'],str(path),dhash,self.clock(),identity))

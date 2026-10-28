@@ -18,6 +18,7 @@ def job_summary(job):
     if 'candidates' in result:return f"신규 후보 {result['candidates']}건 확인"
     if 'indexed' in result:return f"사진 {result['indexed']}건 목록 갱신"
     if 'registered' in result:return f"정보 {result.get('updated',0)}건 · 자동 등록 {result['registered']}건"
+    if 'possible_duplicates' in result:return f"유사 후보 {result['possible_duplicates']}개"+(' · 최대 200개로 제한 · 동일 사진 확정 아님' if result.get('match_limit_reached') else ' · 동일 사진 확정 아님')
     if result.get('metadata_updated'):return f"대상 정보 갱신 · 소속 후보 {result.get('member_proposals',0)}명"
     return ''
 
@@ -61,7 +62,7 @@ class OnlineDialog(QDialog):
         self.tabs=QTabWidget();layout.addWidget(self.tabs,1)
         self.candidates=self.table(['이름','유형','외부 ID','상태','검토 이유'])
         self.targets=self.table(['이름','유형','외부 ID','Commons 카테고리'])
-        self.jobs=self.table(['종류','상태','시도','결과/오류'])
+        self.jobs=self.table(['출처','종류','상태','시도','결과/오류'])
         self.tabs.addTab(self.candidates,'등록 검토')
         self.tabs.addTab(self.targets,'갱신 대상')
         page=QWidget();body=QVBoxLayout(page)
@@ -154,15 +155,15 @@ class OnlineDialog(QDialog):
         self.snapshot_pending=True
         target=self.filter.currentData();offset=self.offset
         def load(_):
-            return self.service.ready(),self.repo.candidates(),self.repo.targets(),self.repo.images(target,offset),self.repo.jobs()
+            return self.service.ready(),self.repo.candidates(),self.repo.targets(),self.repo.images(target,offset),self.repo.jobs(),{'web:'+p['id']:p['name'] for p in self.service.web.repo.profiles()}
         def done(result):
             self.snapshot_pending=False
             if target!=self.filter.currentData() or offset!=self.offset:
                 self.reload_requested=False
                 self.reload()
                 return
-            reviewed,self.candidate_rows,self.target_rows,self.image_rows,self.job_rows=result
-            self.status.setText('공개 API 연결 준비 완료 · 사진별 이용 조건 및 등장 인물은 별도로 확인합니다.' if reviewed else '최신 제공처 정책/API 확인 대기 · 실제 자동 수집은 아직 활성화하지 않았습니다. 로컬 라이브러리는 계속 사용할 수 있습니다.')
+            reviewed,self.candidate_rows,self.target_rows,self.image_rows,self.job_rows,source_names=result
+            self.status.setText('공개 API 연결 준비 완료 · 사진별 이용 조건 및 등장 인물은 별도로 확인합니다.' if reviewed else 'Wikimedia 연결/정책 확인 대기 · 개별 출처 권한은 출처 · URL에서 관리합니다.')
             self.fill(self.candidates,[[x['name'],'그룹' if x['kind']=='group' else '인물',x['external_id'],{'pending':'검토 대기','conflict':'연결 충돌'}.get(x['status'],x['status']),x['reason']] for x in self.candidate_rows],None,[x['id'] for x in self.candidate_rows])
             self.fill(self.targets,[[x['name'],'그룹' if x['kind']=='group' else '인물',x['external_id'],x['category']] for x in self.target_rows],None,[x['id'] for x in self.target_rows])
             self.fill(self.images,[[x['title'],f"{x['width']} × {x['height']}",x['license_name']+(' · 검토 필요' if x['license_status']!='eligible' else '') if x['license_name'] else '검토 필요','보관됨' if x['local_asset_id'] else '온라인'] for x in self.image_rows],None,[x['id'] for x in self.image_rows])
@@ -176,7 +177,7 @@ class OnlineDialog(QDialog):
                     if self.preview_job:self.preview_job.cancelled.set()
                     self.preview.clear();self.preview.setText('사진을 선택하세요')
                     self.details.setText('등장 인물은 자동 확정하지 않습니다.')
-            self.fill(self.jobs,[[KIND_LABELS.get(x['kind'],x['kind']),STATES.get(x['state'],x['state']),x['attempts'],job_summary(x)] for x in self.job_rows],None,[x['id'] for x in self.job_rows])
+            self.fill(self.jobs,[[source_names.get(x.get('source_key'),'Wikimedia' if x.get('source_key')=='wikimedia' else '출처 확인 필요'),KIND_LABELS.get(x['kind'],x['kind']),STATES.get(x['state'],x['state']),x['attempts'],job_summary(x)] for x in self.job_rows],None,[x['id'] for x in self.job_rows])
             current=self.filter.currentData()
             self.filter.blockSignals(True);self.filter.clear();self.filter.addItem('모든 등록 대상',None)
             for x in self.target_rows:self.filter.addItem(x['name'],x['id'])

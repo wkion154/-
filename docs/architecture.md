@@ -1,3 +1,17 @@
+# Alpha 6 architecture update
+
+`workers.Tasks` owns a pending deque and hands Qt only the configured number of active runnables. Cancelled queued jobs are pruned before dispatch; optional keys retain the latest replaceable request. Explicit unkeyed writes are preserved. Signal connections are disposed for both completed and never-started jobs to break closure cycles. Native active decodes still require cooperative completion.
+
+Schema v5 adds per-source scheduling and claim tokens to `sync_jobs`, persistent source cooldown/turn records, and `perceptual_features` with five covering band indexes. Source turns are logical monotonically increasing sequence numbers, not wall-clock timestamps. Atomic claims exclude an already-running network job of the same source; local analysis is independent. Production `OnlineService` finishes with the claim token, preventing a recovered old invocation from overwriting a new claim. At startup the entry point acquires a data-directory `QLockFile` before DB migrations or recovery. Queue consumers outside the app entry point must coordinate recovery themselves.
+
+`OnlineRunner` has at most two network tasks and one low-priority analysis task. Settings can reduce network work to one; running tasks complete before the new capacity is enforced. Reference-counted foreground scopes and a short scrolling deferral suppress new automatic launches while preserving explicit manual requests. Source fairness applies to automatic claims; targeted requests retain their explicit request queue.
+
+`request_pacing.HostPacer` shares per-host spacing and server cooldown across HTTP clients and redirects, without holding a global lock while waiting. A cooldown longer than two seconds returns a retry condition so a worker does not wait for minutes. Durable source backoff survives restart; runtime host pacing is rebuilt per process. Inherited proxy/TLS trust and host guards remain active.
+
+`perceptual` splits 64-bit dHash into 13/13/13/13/12-bit bands. At Hamming radius four at least one band is equal. Bounded sorted prefixes from five indexes are unioned, paged by item ID and then filtered by exact distance/current revision/analysis permissions. Batch size is at most 512; source jobs checkpoint the cursor and input SHA. Continuations reuse verified stored features. Per-invocation suggestions stop at 200 to bound ambiguous low-information hashes. Schema migration backfills only existing stored hashes in chunks, without new pixel analysis or permission grants.
+
+`Database.register` begins an immediate transaction before duplicate lookup so concurrent source completions share the same asset and preserve both associations. This is logical SHA256 deduplication; cross-source storage copies are not globally compacted or deleted. See stage-6-report.md for evidence and remaining release gates. Historical version notes follow.
+
 # Alpha 5 architecture update
 
 `related_schema.py` adds schema v4 transactionally, backing up existing v1/v2/v3 databases. Canonically ordered `related_overrides` store symmetric user-confirmed event/related/excluded decisions and evidence without modifying assets or identity links. `related_searches` stores one latest audit snapshot per seed, including input hashes, algorithm version and ranked reasons; it is never reused as an authorization token. Date and reverse relationship indexes bound candidate lookups.

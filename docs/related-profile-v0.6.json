@@ -1,0 +1,21 @@
+{
+  "scope": "Linux SQLite worker search; generated metadata only, no image decoding, real photo relevance or physical display FPS measured.",
+  "results": [
+    {
+      "metadata_count": 10000,
+      "search_ms": 82.25,
+      "returned": 120,
+      "max_candidate_budget": 1024,
+      "per_reason_budget": 256,
+      "peak_rss_mib": 18.0
+    },
+    {
+      "metadata_count": 100000,
+      "search_ms": 84.75,
+      "returned": 120,
+      "max_candidate_budget": 1024,
+      "per_reason_budget": 256,
+      "peak_rss_mib": 18.91
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "scope": "Linux Qt offscreen. Precomputed synthetic hashes and metadata; one generated JPEG for virtual photos. Fixture network workers wait locally; no external requests or real AI. Tests responsiveness and specific worker retention, not physical display FPS, all-process leak freedom or real-site uptime.",
+  "band_index": [
+    {
+      "indexed": 10000,
+      "incremental_build_ms": 151.69,
+      "query_ms": 1.01,
+      "candidate_count": 15,
+      "pages": 1,
+      "exact_matches": 10,
+      "bruteforce_matches": 10
+    },
+    {
+      "indexed": 100000,
+      "incremental_build_ms": 2217.26,
+      "query_ms": 1.5,
+      "candidate_count": 88,
+      "pages": 1,
+      "exact_matches": 20,
+      "bruteforce_matches": 20
+    }
+  ],
+  "obsolete_work": {
+    "submissions": 10000,
+    "submission_loop_ms": 240.87,
+    "retained_jobs_while_blocked": 2,
+    "pending": 1,
+    "executed_latest_requests": 1,
+    "live_replaced_jobs": 1,
+    "live_jobs_after_completion": 0
+  },
+  "foreground_under_fixture_load": {
+    "metadata_count": 100000,
+    "network_slots_observed": 2,
+    "analysis_slots": 1,
+    "viewport_jumps": 20,
+    "navigation_total_ms": 198.22,
+    "event_loop_max_gap_ms": 16.12,
+    "event_loop_p95_gap_ms": 14.35,
+    "max_resident_metadata": 2048,
+    "peak_process_rss_mib": 132.21
+  }
+}

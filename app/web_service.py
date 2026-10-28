@@ -190,33 +190,54 @@ class WebService:
                 conn.execute('INSERT INTO asset_visibility VALUES(?,?,?) ON CONFLICT(asset_id) DO UPDATE SET hidden=excluded.hidden,reason=excluded.reason',(asset,int(hidden),'사용자가 확인한 등장 인물이 모두 남성 · 로컬 라이브러리에서 확인 가능' if hidden else ''))
         return {'asset_id':asset,'sha256':item['sha256']}
 
-    def analyze(self,identity,cancelled):
+    def analyze(self,identity,cancelled,after='',expected_sha=None):
         item=self.repo.image(identity)
+        if expected_sha and item['sha256']!=expected_sha:raise RemoteError('분석 중 파일 개정본이 변경됐습니다. 새로 검사를 요청하세요.',blocked=True)
         self.repo.require(item['source_id'],'local_analysis','web:'+identity)
-        if not item['cache_path']:raise RemoteError('검사된 로컬 이미지가 없습니다. 분석 권한이 다운로드 권한을 대신하지 않습니다.')
-        path=Path(item['cache_path'])
-        if file_hash(path)!=item['sha256']:raise RemoteError('파일이 변경되어 분석하지 않았습니다.')
-        with Image.open(path) as image:
-            image.draft('L',(18,18))
-            image.thumbnail((18,18))
-            image=ImageOps.exif_transpose(image).convert('L').resize((9,8))
-            pixels=list(image.getdata())
-            bits=0
-            for y in range(8):
-                for x in range(8):bits=(bits<<1)|int(pixels[y*9+x]>pixels[y*9+x+1])
-        value=f'{bits:016x}'
+        if after:
+            if not expected_sha or not item['dhash']:raise RemoteError('분석 이어가기 근거가 없습니다. 새로 요청하세요.',blocked=True)
+            from .perceptual import bands
+            bands(item['dhash'])
+            value=item['dhash'];bits=int(value,16)
+        else:
+            if not item['cache_path']:raise RemoteError('검사된 로컬 이미지가 없습니다. 분석 권한이 다운로드 권한을 대신하지 않습니다.')
+            path=Path(item['cache_path'])
+            if file_hash(path)!=item['sha256']:raise RemoteError('파일이 변경되어 분석하지 않았습니다.')
+            with Image.open(path) as image:
+                image.draft('L',(18,18))
+                image.thumbnail((18,18))
+                image=ImageOps.exif_transpose(image).convert('L').resize((9,8))
+                pixels=list(image.getdata())
+                bits=0
+                for y in range(8):
+                    for x in range(8):bits=(bits<<1)|int(pixels[y*9+x]>pixels[y*9+x+1])
+            value=f'{bits:016x}'
+        from .perceptual import store_feature,candidates
+        self.repo.require(item['source_id'],'local_analysis','web:'+identity)
         with self.db.connect() as conn:
+            current=conn.execute('SELECT sha256 FROM web_images WHERE id=?',(identity,)).fetchone()
+            if current['sha256']!=item['sha256']:raise RemoteError('분석 중 파일이 변경됐습니다.',blocked=True)
             conn.execute('UPDATE web_images SET dhash=? WHERE id=?',(value,identity))
-            candidates=conn.execute('SELECT id,dhash FROM web_images WHERE dhash IS NOT NULL AND id<>? LIMIT 10000',(identity,)).fetchall()
-            count=0
-            for candidate in candidates:
+            store_feature(conn,identity,item['sha256'],value,self.clock())
+            if not after:
+                conn.execute("DELETE FROM image_relations WHERE (left_id=? OR right_id=?) AND kind='perceptual_candidate'",(identity,identity))
+            rows,more=candidates(conn,identity,item['sha256'],value,cancelled,after)
+            count=0;processed=0;limited=False
+            previous=conn.execute("SELECT COUNT(*) FROM image_relations WHERE (left_id=? OR right_id=?) AND kind='perceptual_candidate'",(identity,identity)).fetchone()[0]
+            for candidate in rows:
+                processed+=1
                 if cancelled.is_set():raise Cancelled()
-                distance=(bits^int(candidate['dhash'],16)).bit_count()
+                other=conn.execute('SELECT source_id FROM web_images WHERE id=?',(candidate['id'],)).fetchone()
+                if not self.repo.allowed_in(conn,other['source_id'],'local_analysis','web:'+candidate['id']):continue
+                try:distance=(bits^int(candidate['dhash'],16)).bit_count()
+                except (ValueError,TypeError):continue
                 if distance<=4:
                     left,right=sorted((identity,candidate['id']))
-                    conn.execute('INSERT OR REPLACE INTO image_relations VALUES(?,?,?,?,?)',(left,right,'perceptual_candidate',distance,json.dumps({'algorithm':'dhash64-thumb-v1','not_identity_proof':True})))
+                    conn.execute('INSERT OR REPLACE INTO image_relations VALUES(?,?,?,?,?)',(left,right,'perceptual_candidate',distance,json.dumps({'algorithm':'dhash64-thumb-v1','not_identity_proof':True,'hashes':{identity:item['sha256'],candidate['id']:candidate['sha256']}})))
                     count+=1
-        return {'possible_duplicates':count,'not_identity_proof':True}
+                    if previous+count>=200:
+                        limited=True;break
+        return {'possible_duplicates':previous+count,'batch_matches':count,'match_limit_reached':limited,'not_identity_proof':True,'compared_candidates':processed,'next_cursor':rows[-1]['id'] if more and rows and not limited else None,'analysis_sha':item['sha256']}
 
     def best(self,identity):
         item=self.repo.image(identity)
@@ -246,5 +267,5 @@ class WebService:
         if kind=='web_scan':return self.scan(payload['page_id'],cancelled)
         if kind=='web_probe':return self.probe(payload['item_id'],cancelled)
         if kind=='web_download':return self.download(payload['item_id'],cancelled,payload.get('confirmed_people',()))
-        if kind=='web_analyze':return self.analyze(payload['item_id'],cancelled)
+        if kind=='web_analyze':return self.analyze(payload['item_id'],cancelled,payload.get('after',''),payload.get('analysis_sha'))
         raise ValueError('알 수 없는 웹 출처 작업입니다.')

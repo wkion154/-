@@ -125,7 +125,7 @@ def test_migration_and_sort_pagination(db,photo):
     assert db.query(sort='name')[0][0]['name']=='0000.png'
     again=Database(db.path)
     assert again.query()[1]==300
-    with db.connect() as c:assert [r[0] for r in c.execute('SELECT version FROM schema_migrations ORDER BY version')]==[1,2,3,4]
+    with db.connect() as c:assert [r[0] for r in c.execute('SELECT version FROM schema_migrations ORDER BY version')]==[1,2,3,4,5]
 
 
 def test_exif_orientation_and_cache_invalidation(tmp_path):

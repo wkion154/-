@@ -22,7 +22,7 @@ class MainWindow(QMainWindow):
     def __init__(self,db,settings):
         super().__init__()
         self.db,self.settings=db,settings
-        self.setWindowTitle('K-IDOL ARCHIVE · Alpha 5')
+        self.setWindowTitle('K-IDOL ARCHIVE · Alpha 6')
         self.resize(1440,920)
         self.setMinimumSize(820,560)
         self.scope=None
@@ -89,7 +89,7 @@ class MainWindow(QMainWindow):
         self.tree.customContextMenuRequested.connect(self.entity_menu)
         side.addWidget(self.tree,1)
         side.addWidget(self.button('멤버 연결 관리',self.memberships))
-        label=QLabel('ALPHA 5\n로컬 우선 · 원본 보존')
+        label=QLabel('ALPHA 6\n로컬 우선 · 원본 보존')
         label.setObjectName('muted')
         side.addWidget(label)
         self.splitter.addWidget(self.sidebar)
@@ -222,6 +222,7 @@ class MainWindow(QMainWindow):
         shortcut.activated.connect(lambda:self.choose_import(False))
         self.online_service=OnlineService(db,settings,WikimediaProvider(HttpClient()))
         self.online_runner=OnlineRunner(self.online_service,settings,self)
+        self.gallery.verticalScrollBar().valueChanged.connect(lambda _:self.online_runner.defer())
         self.online_runner.library_changed.connect(self.online_changed)
         self.online_runner.state_changed.connect(self.sync_label.setText)
         self.online_runner.error.connect(lambda message:self.statusBar().showMessage(message,12000))
@@ -509,7 +510,8 @@ class MainWindow(QMainWindow):
         if not isinstance(identity,str):identity=self.selected['id'] if self.selected else None
         if not identity:return
         dialog=RelatedDialog(self.db,self.settings,identity,self)
-        dialog.exec();dialog.deleteLater()
+        with self.online_runner.foreground():dialog.exec()
+        dialog.deleteLater()
         self.reload(preserve=True)
 
     def open_viewer(self,index):
@@ -524,7 +526,7 @@ class MainWindow(QMainWindow):
             self.persist_favorite(identity,value)
         viewer.favorite_changed.connect(favorite)
         viewer.related_requested.connect(self.open_related)
-        viewer.exec()
+        with self.online_runner.foreground():viewer.exec()
         viewer.deleteLater()
         self.gallery.verticalScrollBar().setValue(scroll)
         self.gallery.viewport().update()

@@ -64,7 +64,7 @@ def test_v1_migration_backup_and_user_data_preserved(tmp_path):
         assert saved.execute('SELECT name FROM groups').fetchone()[0]=='User Name'
     Database(path)
     assert len(list(tmp_path.glob('*.bak')))==1
-    with db.connect() as migrated:assert migrated.execute('PRAGMA user_version').fetchone()[0]==4
+    with db.connect() as migrated:assert migrated.execute('PRAGMA user_version').fetchone()[0]==5
 
 
 def test_external_identity_never_merges_same_name_or_overwrites_user(db):
@@ -121,7 +121,8 @@ def test_policy_gate_blocks_before_any_network(db,settings):
 def test_retry_after_failure_does_not_block_independent_job(db,settings,monkeypatch):
     now=[1000.0];service=OnlineService(db,settings,FakeProvider(),lambda:now[0]);approved(service.repo)
     bad=service.repo.enqueue('photos',{'target_id':'bad'})
-    good=service.repo.enqueue('discover',{})
+    same_source=service.repo.enqueue('discover',{})
+    good=service.repo.enqueue('web_scan',{'page_id':'independent-source-fixture'})
     def execute(job,cancel):
         if job['id']==bad:raise RemoteError('429',retryable=True,retry_after=90)
         return {'ok':True},None
@@ -129,6 +130,7 @@ def test_retry_after_failure_does_not_block_independent_job(db,settings,monkeypa
     assert service.run_one(threading.Event())['state']=='retry'
     assert service.run_one(threading.Event())['id']==good
     assert service.run_one(threading.Event()) is None
+    assert service.repo.job_state(same_source)=='queued'
     now[0]+=90
     assert service.repo.claim()['id']==bad
 
