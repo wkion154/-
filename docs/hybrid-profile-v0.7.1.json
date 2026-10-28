@@ -1,0 +1,16 @@
+{
+  "scope": "Linux Qt offscreen: 50k local rows reference one generated JPEG with synthetic hashes; 50k online metadata links have no image permission and perform no requests. Not 100k distinct photo decodes, real-site collection, or physical display FPS.",
+  "results": {
+    "local_metadata": 50000,
+    "remote_metadata": 50000,
+    "total": 100000,
+    "first_local_thumbnail_ms": 71.02,
+    "last_page_ms": 26.38,
+    "event_loop_max_gap_ms": 19.37,
+    "event_loop_p95_gap_ms": 11.01,
+    "max_resident_metadata": 2048,
+    "thumbnail_jobs_limit": 8,
+    "remote_original_requests": 0,
+    "peak_process_rss_mib": 108.56
+  }
+}

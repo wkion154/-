@@ -155,7 +155,7 @@ class SettingsDialog(QDialog):
         self.network_workers.setCurrentIndex(0 if settings.values.get('network_workers',2)==1 else 1)
         self.network_workers.setToolTip('수집 동시 처리량을 줄여 메모리 사용을 낮출 수 있습니다. 실행 중인 작업은 마친 뒤 적용합니다. 감상 중 새 자동 작업은 대기합니다.')
         form.addRow('백그라운드 수집',self.network_workers)
-        label=QLabel('차콜 다크 테마 · 로컬 라이브러리 Alpha 6\n캐시 경로 변경은 기존 파일을 이동·삭제하지 않습니다.\n온라인 연결 상태는 상단 온라인에서 확인하세요. AI는 후속 단계입니다.')
+        label=QLabel('차콜 다크 테마 · 로컬 라이브러리 7-1 개발판\n캐시 경로 변경은 기존 파일을 이동·삭제하지 않습니다.\n온라인 연결 상태는 상단 온라인에서 확인하세요. AI는 후속 단계입니다.')
         label.setWordWrap(True)
         form.addRow(label)
         b=QDialogButtonBox(QDialogButtonBox.StandardButton.Save|QDialogButtonBox.StandardButton.Cancel)

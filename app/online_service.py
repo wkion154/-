@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import time
 import uuid
+import shutil
 from PIL import Image
 from .images import inspect_image, file_hash, decode_preview
 from .providers.http import RemoteError, Cancelled, validate_url, HOSTS
@@ -158,7 +159,24 @@ class OnlineService:
             suffix={'image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp'}[row['mime']]
             destination=Path(local['path']) if reused else self.settings.storage/'commons'/('commons-'+row['id']+suffix)
             if not reused:
-                download_file(self.provider.http,row['original_url'],destination,cancelled,expected_size=row['size'],expected_sha1=row['source_sha1'])
+                with self.db.connect() as conn:cache=conn.execute('SELECT * FROM remote_view_cache WHERE entry_id=?',('commons:'+row['id'],)).fetchone()
+                revision=(row['source_sha1'] or '')+'|'+row['original_url']
+                if cache and cache['source_revision']==revision and Path(cache['path']).is_file():
+                    if file_hash(cache['path'])!=cache['sha256']:raise RemoteError('보기 캐시가 변경됐습니다. 덮어쓰지 않았습니다.')
+                    destination.parent.mkdir(parents=True,exist_ok=True)
+                    temp=destination.with_name(destination.name+'.'+uuid.uuid4().hex+'.part')
+                    try:
+                        if not destination.exists():
+                            with Path(cache['path']).open('rb') as original,temp.open('xb') as output:
+                                while chunk:=original.read(1024*1024):
+                                    if cancelled.is_set():raise Cancelled()
+                                    output.write(chunk)
+                            if file_hash(temp)!=cache['sha256']:raise RemoteError('보관 복사본 무결성 오류')
+                            self.require_review('original_download','commons:'+row['id'])
+                            temp.replace(destination)
+                        elif file_hash(destination)!=cache['sha256']:raise RemoteError('기존 보관 파일을 덮어쓰지 않았습니다.')
+                    finally:temp.unlink(missing_ok=True)
+                else:download_file(self.provider.http,row['original_url'],destination,cancelled,expected_size=row['size'],expected_sha1=row['source_sha1'])
             meta=inspect_image(destination)|dict(name=row['title'].removeprefix('File:'),managed=local['managed'] if reused else 1)
             if reused:
                 expected=source_sha1(row['source_sha1'])
@@ -189,11 +207,11 @@ class OnlineService:
         row=self.repo.image(identity)
         self.require_review('thumbnail','commons:'+row['id'])
         cached=Path(row['thumbnail_path']) if row['thumbnail_path'] else None
-        if cached and cached.is_file():return decode_preview(cached,512)
+        if cached and cached.is_file():return decode_preview(cached,512,pixel_limit=4_000_000)
         self.require_review()
         if row['license_status']!='eligible':raise RemoteError('파일별 이용 조건을 확인하기 전에는 썸네일도 받지 않습니다.',blocked=True)
         if not row['thumbnail_url']:raise RemoteError('제공처 썸네일이 없습니다. 원본을 대신 자동 다운로드하지 않습니다.')
         path=self.settings.cache/'online'/('commons-'+row['id']+'.preview')
-        download_file(self.provider.http,row['thumbnail_url'],path,cancelled,limit=8*1024*1024)
+        download_file(self.provider.http,row['thumbnail_url'],path,cancelled,limit=8*1024*1024,max_pixels=4_000_000)
         self.repo.image_path(identity,path)
-        return decode_preview(path,512)
+        return decode_preview(path,512,pixel_limit=4_000_000)

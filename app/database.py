@@ -36,10 +36,10 @@ class Database:
         from .stability_schema import SCHEMA_V5
         with self.connect() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version > 5:
+            if version > 6:
                 raise RuntimeError('이 라이브러리는 더 최신 버전의 앱에서 생성되었습니다.')
             # SQLite backup includes WAL contents; never replace an existing user backup.
-            if version in (1,2,3,4):
+            if version in (1,2,3,4,5):
                 backup_path = self.path.with_name(self.path.name+f'.v{version}-'+uuid.uuid4().hex[:12]+'.bak')
                 destination = sqlite3.connect(backup_path)
                 try:
@@ -69,7 +69,11 @@ class Database:
                 from .perceptual import backfill
                 backfill(db)
                 db.execute('INSERT INTO schema_migrations VALUES(5,?)',(time.time(),))
-            db.execute('PRAGMA user_version=5')
+            if version < 6:
+                from .hybrid_schema import statements
+                for statement in statements():db.execute(statement)
+                db.execute('INSERT INTO schema_migrations VALUES(6,?)',(time.time(),))
+            db.execute('PRAGMA user_version=6')
 
     @contextmanager
     def connect(self):
@@ -136,12 +140,16 @@ class Database:
     def register(self, metadata, person=None, group=None, origin='local'):
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
-            row = db.execute('SELECT id FROM assets WHERE sha256=?', (metadata['sha256'],)).fetchone()
+            row = db.execute('SELECT id,path,managed FROM assets WHERE sha256=?', (metadata['sha256'],)).fetchone()
             duplicate = row is not None
             identity = row['id'] if duplicate else uuid.uuid4().hex
             if not duplicate:
                 keys = ('path', 'name', 'sha256', 'width', 'height', 'size', 'format', 'registered', 'managed')
                 db.execute('INSERT INTO assets(id,'+','.join(keys)+') VALUES('+','.join('?' for _ in range(10))+')', (identity, *(metadata[k] for k in keys)))
+            elif metadata.get('managed') and not row['managed']:
+                # Explicit permanent preservation may promote an external reference.
+                # The old file is untouched; schema-v6 history retains its location.
+                db.execute('UPDATE assets SET path=?,managed=1 WHERE id=?',(metadata['path'],identity))
             if person:
                 db.execute('INSERT OR IGNORE INTO image_person(image_id,person_id) VALUES(?,?)', (identity, person))
             if group:

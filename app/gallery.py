@@ -7,6 +7,10 @@ from PySide6.QtWidgets import QListView, QStyledItemDelegate, QStyle, QAbstractI
 from .images import make_thumbnail, decode_preview
 from .workers import Tasks
 
+def thumbnail_key(row):
+    return row.get('thumbnail_key') or row['sha256']
+
+
 class GalleryModel(QAbstractListModel):
     """Virtual row positions with a bounded LRU of metadata pages."""
     changed = Signal(int)
@@ -78,6 +82,7 @@ class GalleryModel(QAbstractListModel):
         self.failed_pages.clear()
         self.wanted_pages.clear()
         self.dispatch.stop()
+        repository=self.db
         self.scope, self.search, self.sort = scope, search, sort
         self.source_filter = source_filter
         self.beginResetModel()
@@ -100,7 +105,7 @@ class GalleryModel(QAbstractListModel):
             if generation == self.generation:
                 self.loading = False
                 self.failed.emit(message)
-        job = self.tasks.submit(lambda _: self.db.query(scope, search, sort, source_filter=source_filter), done, error)
+        job = self.tasks.submit(lambda _: repository.query(scope, search, sort, source_filter=source_filter), done, error)
         self.pending_pages[-1] = job
 
     def _dispatch_pages(self):
@@ -111,6 +116,7 @@ class GalleryModel(QAbstractListModel):
             generation = self.generation
             scope, search, sort = self.scope, self.search, self.sort
             source_filter = self.source_filter
+            repository=self.db
             def done(result, number=number, generation=generation):
                 if generation != self.generation:
                     return
@@ -133,8 +139,8 @@ class GalleryModel(QAbstractListModel):
                 self.failed.emit(message)
                 self._dispatch_pages()
             self.pending_pages[number] = self.tasks.submit(
-                lambda _, number=number, scope=scope, search=search, sort=sort, source_filter=source_filter:
-                    self.db.query(scope, search, sort, number*self.PAGE_SIZE, self.PAGE_SIZE, count=False, source_filter=source_filter),
+                lambda _, number=number, scope=scope, search=search, sort=sort, source_filter=source_filter, repository=repository:
+                    repository.query(scope, search, sort, number*self.PAGE_SIZE, self.PAGE_SIZE, count=False, source_filter=source_filter),
                 done, error)
 
     def close_tasks(self):
@@ -165,6 +171,7 @@ class GalleryView(QListView):
         self.pending = {}
         self.cache = cache
         self.authorize = None
+        self.thumbnail_loader = None
         self.tasks = Tasks(self, 2)
         self.edge = 216
         self.setItemDelegate(PhotoDelegate(self))
@@ -172,6 +179,9 @@ class GalleryView(QListView):
         self.anchor_timer.setInterval(16)
         self.anchor_timer.timeout.connect(self._restore_anchor)
         self.anchor = None
+        self.anchor_signature=None
+        self.anchor_stable=0
+        self.verticalScrollBar().sliderPressed.connect(self.cancel_anchor)
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.timeout.connect(self.load_visible)
@@ -214,13 +224,14 @@ class GalleryView(QListView):
             row = model.row_at(rownum)
             if row is not None:
                 visible.append(row)
-        desired = {row['sha256'] for row in visible}
+        desired = {thumbnail_key(row) for row in visible}
         for key,(_,job) in list(self.pending.items()):
             if key not in desired:
                 job.cancelled.set()
                 self.pending.pop(key,None)
         for row in visible:
-            key = row['sha256']
+            key = thumbnail_key(row)
+            if not row.get('thumbnail_allowed',True):continue
             if key in self.thumbs or key in self.pending or key in self.errors:
                 continue
             if len(self.pending) >= 8:
@@ -250,11 +261,13 @@ class GalleryView(QListView):
             def decode(_, path=path, cache=cache, key=key, row=dict(row)):
                 if self.authorize is not None and not self.authorize(row):
                     raise ValueError('이 사진의 표시 권한을 먼저 확인하세요.')
+                if self.thumbnail_loader is not None:return self.thumbnail_loader(row,_)
                 return decode_preview(make_thumbnail(path,cache,key),512)
             job = self.tasks.submit(decode,done,error)
             self.pending[key] = (token,job)
     def restore_anchor(self, position, y_offset, selected_position=None):
         self.anchor = position,y_offset,selected_position,time.monotonic()+5
+        self.anchor_signature=None;self.anchor_stable=0
         self.anchor_timer.start()
         self._restore_anchor()
 
@@ -267,16 +280,24 @@ class GalleryView(QListView):
             self.anchor = None
             return
         index = self.model().index(position)
-        if not self.visualRect(index).isValid():
+        if not self.visualRect(index).isValid() or not self.visualRect(self.model().index(self.model().rowCount()-1)).isValid():
             return
         if selected_position is not None:
             self.model().row_at(selected_position)
             self.setCurrentIndex(self.model().index(selected_position))
         self.scrollTo(index,QAbstractItemView.ScrollHint.PositionAtTop)
         self.verticalScrollBar().setValue(self.verticalScrollBar().value()+self.visualRect(index).top()-y_offset)
-        self.anchor_timer.stop()
-        self.anchor = None
-        self.schedule()
+        signature=(self.viewport().width(),self.verticalScrollBar().maximum(),self.visualRect(index).top(),self.gridSize().width(),self.gridSize().height())
+        self.anchor_stable=self.anchor_stable+1 if signature==self.anchor_signature else 0
+        self.anchor_signature=signature
+        if self.anchor_stable>=2:
+            self.anchor_timer.stop();self.anchor=None;self.schedule()
+
+    def cancel_anchor(self):
+        self.anchor_timer.stop();self.anchor=None
+
+    def wheelEvent(self,event):
+        self.cancel_anchor();super().wheelEvent(event)
 
     def close_tasks(self):
         self.anchor_timer.stop()
@@ -301,7 +322,7 @@ class PhotoDelegate(QStyledItemDelegate):
         painter.setBrush(QColor('#2a2b3b' if selected else '#1c1d23'))
         painter.drawRoundedRect(rect, 8, 8)
         photo = QRect(rect.x()+5, rect.y()+5, rect.width()-10, view.edge)
-        key = row['sha256']
+        key = thumbnail_key(row)
         pix = view.thumbs.get(key)
         if pix:
             view.thumbs.move_to_end(key)
@@ -311,13 +332,16 @@ class PhotoDelegate(QStyledItemDelegate):
             painter.drawPixmap(dst, pix)
         else:
             painter.setPen(QColor('#727681'))
-            painter.drawText(photo, Qt.AlignmentFlag.AlignCenter, '파일 확인 필요' if key in view.errors else 'IMAGE')
+            painter.drawText(photo, Qt.AlignmentFlag.AlignCenter, ('썸네일 확인 필요' if row.get('kind','asset')!='asset' else '파일 확인 필요') if key in view.errors else ('출처 링크' if row.get('kind','asset')!='asset' else ('표시 권한 확인' if not row.get('thumbnail_allowed',True) else 'IMAGE')))
         painter.setFont(QFont('Segoe UI', 9))
         painter.setPen(QColor('#e3e5ed'))
         text_rect = QRect(rect.x()+10, photo.bottom()+10, rect.width()-20, 18)
         painter.drawText(text_rect, Qt.AlignmentFlag.AlignLeft, painter.fontMetrics().elidedText(row['name'], Qt.TextElideMode.ElideRight, text_rect.width()))
         painter.setPen(QColor('#989ca9'))
-        painter.drawText(text_rect.translated(0,20), Qt.AlignmentFlag.AlignLeft, f"{row['width']:,} × {row['height']:,}  ·  {row['format']}" )
+        if row.get('kind','asset')!='asset':
+            status='온라인 · '+(f"{row['width']:,} × {row['height']:,}" if row['width'] and row['height'] else '미실측')
+        else:status=f"{row['width']:,} × {row['height']:,}  ·  {row['format']}"
+        painter.drawText(text_rect.translated(0,20), Qt.AlignmentFlag.AlignLeft, status)
         if row['favorite']:
             painter.setPen(QColor('#d1c2ff'))
             painter.drawText(photo.adjusted(6,6,-6,-6), Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight, '★')

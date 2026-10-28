@@ -1,0 +1,20 @@
+{
+  "checked_at": "2026-10-28T06:00:53.577100+00:00",
+  "runtime_policy": "restricted_enforced",
+  "runtime_custom_hosts": [],
+  "draft_persistence_confirmed": true,
+  "draft_revision": 3,
+  "draft_custom_hosts": [
+    "commons.wikimedia.org",
+    "doc.wikimedia.org",
+    "foundation.wikimedia.org",
+    "query.wikidata.org",
+    "upload.wikimedia.org",
+    "www.mediawiki.org",
+    "www.wikidata.org"
+  ],
+  "applied": false,
+  "live_collection_verified": false,
+  "policy_reviewed": false,
+  "required_action": "Review and save the existing network draft in environment settings, then publish the environment. A draft save does not apply runtime policy."
+}

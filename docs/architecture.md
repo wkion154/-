@@ -1,3 +1,17 @@
+# Stage 7-1 architecture update
+
+Schema v6 materializes sortable metadata from local assets, Web candidates and Commons records in `gallery_items`. SQL triggers retain first-discovery order, update meaningful row changes, track gallery revisions and maintain explicit remote associations/favorites. Registered photo IDs stay unchanged; remote IDs have `web:` / `commons:` namespaces. Remote rows linked to a saved asset are suppressed, while unlinked bookmarks are retained even if a matching local SHA is known. Explicit preservation promotes an external reference to a managed path and retains the old path in `asset_path_history`, without touching its original file.
+
+`library.LibraryRepository` provides a common query/locate contract for `GalleryModel` and viewer pagination. Fixed order indexes and a page subquery avoid SQLite's costly OR-plan/global sort and defer path/permission joins until after pagination. Only displayed metadata pages are resident. Source filters, confirmed people, group classifications, male-only visibility and favorites apply to remote/local rows with separate semantics. Unknown identities are never inferred from mentions or Commons person categories.
+
+`LibraryService` revalidates source/resource rights for thumbnail and explicit original reads. Metadata does not imply image permission. Generic pages never substitute arbitrary originals for thumbnails; Commons thumbnails have 8MiB/4MP limits. Remote originals resolve asynchronously into a temporary viewing cache; viewer neighbor prefetch skips remote rows. Local remote-origin files also require current reviewed rights. Cache checksums/revisions are checked before reuse. Permanent preservation is a queued, separately requested operation; Commons can reuse verified viewing bytes.
+
+Favorite/person/group review is transferred only on the actual transition to a linked asset. Metadata refreshes do not reapply an old remote favorite over a local correction. Actual content revision changes archive previous review/favorite state and clear current remote confirmation; saved originals and their links remain. `remote_links` is the explicit human confirmation editor.
+
+The main window offers all/local/online-candidate modes, source details and preservation actions, throttled revision refresh and stable-ID bookmark mapping after promotion. Info panels scroll independently. Scroll restoration waits for a stable batched layout and yields to deliberate wheel/scrollbar input. Viewer source resolution runs in workers; cached display still follows permission checks.
+
+Live verification remains blocked: the confirmed seven-host draft has not been applied to the runtime, and a bounded actual Commons API request returned proxy CONNECT 403. Tests/captures use owned fixtures and do not establish live provider/API/policy compliance. See stage-7-1-report.md for the remaining gate. Historical architecture notes follow.
+
 # Alpha 6 architecture update
 
 `workers.Tasks` owns a pending deque and hands Qt only the configured number of active runnables. Cancelled queued jobs are pruned before dispatch; optional keys retain the latest replaceable request. Explicit unkeyed writes are preserved. Signal connections are disposed for both completed and never-started jobs to break closure cycles. Native active decodes still require cooperative completion.

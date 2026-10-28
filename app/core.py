@@ -14,7 +14,7 @@ def data_root():
 
 class Settings:
     defaults = dict(thumbnail_size=216, sort='newest', sidebar=True, info=True,
-                    viewer_mode='fit', network_workers=2, online_enabled=True, auto_register=True, theme='dark', cache_path='', storage_path='')
+                    viewer_mode='fit', library_mode='all', network_workers=2, online_enabled=True, auto_register=True, theme='dark', cache_path='', storage_path='')
 
     def __init__(self, root):
         self.root = Path(root)
@@ -38,6 +38,7 @@ class Settings:
         for key in ('cache_path', 'storage_path'):
             if not isinstance(self.values[key], str):
                 self.values[key] = ''
+        if self.values.get('library_mode') not in ('all','local','online'):self.values['library_mode']='all'
         if type(self.values.get('network_workers')) is not int or self.values['network_workers'] not in (1,2):
             self.values['network_workers']=2
         if self.values['viewer_mode'] not in ('fit', 'actual'):

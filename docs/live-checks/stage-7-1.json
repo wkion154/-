@@ -1,0 +1,7 @@
+{
+  "checked_at": "2026-10-28T05:27:49.700430+00:00",
+  "url": "https://commons.wikimedia.org/w/api.php?action=query&meta=siteinfo&siprop=general&format=json",
+  "scope": "One bounded public metadata connectivity request, with inherited proxy and TLS; no images or bulk traffic.",
+  "state": "blocked_or_unreachable",
+  "error": "URLError: <urlopen error Tunnel connection failed: 403 Forbidden>"
+}

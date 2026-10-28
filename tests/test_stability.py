@@ -248,7 +248,7 @@ def test_v4_upgrade_backfills_without_image_reads_and_rolls_back_on_failure(tmp_
         assert c.execute('SELECT COUNT(*) FROM perceptual_features').fetchone()[0]==1
         assert c.execute('SELECT source_key FROM sync_jobs').fetchone()[0]=='web:owned'
         assert c.execute('SELECT state FROM resource_permissions').fetchone()[0]=='denied'
-        assert c.execute('PRAGMA user_version').fetchone()[0]==5
+        assert c.execute('PRAGMA user_version').fetchone()[0]==6
     Database(path);assert len(list(tmp_path.glob('*.v4-*.bak')))==2
 
 

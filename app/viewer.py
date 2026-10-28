@@ -106,7 +106,7 @@ class Viewer(QDialog):
     MAX_RECORDS = 768
 
     def __init__(self, rows, position, parent=None, mode='fit', load_more=None,
-                 total=None, base_index=0, related_repo=None, related_cache=None):
+                 total=None, base_index=0, related_repo=None, related_cache=None, row_resolver=None):
         super().__init__(parent)
         self.setWindowTitle('감상 · K-IDOL ARCHIVE')
         self.resize(1200, 820)
@@ -125,9 +125,11 @@ class Viewer(QDialog):
         self.current_job = None
         self.displayed_id = None
         self.mode = mode
+        self.row_resolver = row_resolver
         self.last_cache_hit = False
         self.related_strip = None
         self.strip_auto_hidden = False
+        self.strip_remote_hidden = False
         self.prefetch_timer = QTimer(self)
         self.prefetch_timer.setSingleShot(True)
         self.prefetch_timer.timeout.connect(self.prefetch_neighbors)
@@ -199,8 +201,14 @@ class Viewer(QDialog):
             self.current_job.cancelled.set()
         self.prefetch_timer.stop()
         row = self.rows[self.position]
-        if self.related_strip:self.related_strip.set_seed(row['id'])
-        key = self.key(row,actual)
+        if self.related_strip and row.get('kind','asset')=='asset':
+            if self.strip_remote_hidden:self.related_strip.show();self.strip_remote_hidden=False
+            self.related_strip.set_seed(row['id'])
+        elif self.related_strip:
+            self.strip_remote_hidden=self.strip_remote_hidden or not self.related_strip.isHidden() or self.strip_auto_hidden
+            self.related_strip.cancel();self.related_strip.seed=None;self.related_strip.list.clear();self.related_strip.hide();self.strip_auto_hidden=False
+        self.buttons['연관 사진'].setEnabled(row.get('kind','asset')=='asset')
+        self.buttons['미리보기'].setEnabled(self.related_strip is not None and row.get('kind','asset')=='asset')
         self.title.setText(f"{self.base_index+self.position+1} / {self.total}   {row['name']}")
         self.info.setText(f"불러오는 중…  ·  {row['width']:,} × {row['height']:,}\n{row['path']}")
         self.buttons['☆'].setText('★' if row['favorite'] else '☆')
@@ -209,6 +217,18 @@ class Viewer(QDialog):
         if self.displayed_id != row['id']:
             self.canvas.scene().clear()
             self.canvas.item = None
+        if self.row_resolver is not None:
+            def resolved(value):
+                if self.closed or generation!=self.generation:return
+                self.rows[self.position]=value
+                self._load_row(value,actual,generation)
+            def failed(message):
+                if not self.closed and generation==self.generation:self.info.setText('원본을 열 수 없습니다. 출처 연결·원본 이용 권한을 확인하세요.\n'+message)
+            self.current_job=self.tasks.submit(lambda cancelled:self.row_resolver(row,cancelled),resolved,failed)
+        else:self._load_row(row,actual,generation)
+
+    def _load_row(self,row,actual,generation):
+        key=self.key(row,actual)
         def done(image):
             if generation != self.generation or self.closed:
                 return
@@ -219,6 +239,7 @@ class Viewer(QDialog):
                 self.canvas.actual()
             limited = image.width()<row['width'] or image.height()<row['height']
             status = '빠른 미리보기 · 원본 픽셀에서 전체 해상도' if limited else '전체 해상도'
+            if row.get('kind','asset')!='asset':status+=' · 보기 캐시 · 제공된 파일 기준'
             self.info.setText(f"{row['width']:,} × {row['height']:,}  ·  {row['format']}  ·  {status}\n{row['path']}")
             self.prefetch_timer.start(120)
             self.image_ready.emit(row['id'])
@@ -239,6 +260,7 @@ class Viewer(QDialog):
         for position in (self.position+1,self.position-1):
             if 0 <= position < len(self.rows):
                 row = self.rows[position]
+                if row.get('kind','asset')!='asset' or row.get('requires_review'):continue
                 key = self.key(row)
                 # Do not spend memory preloading full-sized large images or oversized previews.
                 factor = min(1,4096/max(row['width'],row['height']))
@@ -260,8 +282,10 @@ class Viewer(QDialog):
                 self.prefetch_failures.add(key)
                 while len(self.prefetch_failures)>128:
                     self.prefetch_failures.pop()
-            self.prefetch_jobs[key] = self.prefetch_tasks.submit(
-                lambda _,path=row['path']:decode_preview(path,4096),done,error)
+            def decode_neighbor(cancelled,row=dict(row)):
+                value=self.row_resolver(row,cancelled) if self.row_resolver is not None else row
+                return decode_preview(value['path'],4096)
+            self.prefetch_jobs[key] = self.prefetch_tasks.submit(decode_neighbor,done,error)
 
     def actual(self):
         self.show_chrome()

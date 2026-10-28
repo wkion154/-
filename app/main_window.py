@@ -1,9 +1,9 @@
 import logging
 import threading
 from pathlib import Path
-from PySide6.QtCore import Qt,QTimer,QByteArray,Signal,QPoint
-from PySide6.QtGui import QShortcut,QKeySequence,QGuiApplication
-from PySide6.QtWidgets import (QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,QLineEdit,QComboBox,QFrame,QSplitter,QTreeWidget,QTreeWidgetItem,QSlider,QFileDialog,QMessageBox,QDialog,QMenu,QScrollArea)
+from PySide6.QtCore import Qt,QTimer,QByteArray,Signal,QPoint,QUrl
+from PySide6.QtGui import QShortcut,QKeySequence,QGuiApplication,QDesktopServices
+from PySide6.QtWidgets import (QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,QLineEdit,QComboBox,QFrame,QSplitter,QTreeWidget,QTreeWidgetItem,QSlider,QFileDialog,QMessageBox,QDialog,QMenu,QScrollArea,QSizePolicy)
 from .gallery import GalleryModel,GalleryView
 from .dialogs import EntityDialog,LinkDialog,ImportDialog,SettingsDialog
 from .viewer import Viewer
@@ -16,18 +16,24 @@ from .online_runner import OnlineRunner
 from .online_dialog import OnlineDialog
 from .related_dialog import RelatedDialog
 from .related import RelatedRepository
+from .library import LibraryRepository,LibraryService,remote
+from .remote_links import RemoteLinksDialog
+from .page_discovery import clean_url
 
 class MainWindow(QMainWindow):
     import_progress = Signal(int)
     def __init__(self,db,settings):
         super().__init__()
         self.db,self.settings=db,settings
-        self.setWindowTitle('K-IDOL ARCHIVE · Alpha 6')
+        self.setWindowTitle('K-IDOL ARCHIVE · 7-1 개발판')
         self.resize(1440,920)
         self.setMinimumSize(820,560)
         self.scope=None
         self.section='all'
         self.selected=None
+        self.library=LibraryRepository(db)
+        self.gallery_version=-1
+        self.refresh_force=False
         self.import_job=None
         self.bookmark=None
         self.tasks=Tasks(self,1)
@@ -89,7 +95,7 @@ class MainWindow(QMainWindow):
         self.tree.customContextMenuRequested.connect(self.entity_menu)
         side.addWidget(self.tree,1)
         side.addWidget(self.button('멤버 연결 관리',self.memberships))
-        label=QLabel('ALPHA 6\n로컬 우선 · 원본 보존')
+        label=QLabel('STAGE 7-1\n로컬 우선 · 원본 보존')
         label.setObjectName('muted')
         side.addWidget(label)
         self.splitter.addWidget(self.sidebar)
@@ -133,6 +139,11 @@ class MainWindow(QMainWindow):
         refresh=self.button('↻',lambda:self.reload(preserve=True))
         refresh.setToolTip('라이브러리 새로고침')
         tools.addWidget(refresh)
+        self.library_mode=QComboBox()
+        for label,value in [('로컬 + 온라인','all'),('로컬만','local'),('온라인 후보만','online')]:self.library_mode.addItem(label,value)
+        self.library_mode.setCurrentIndex(max(0,self.library_mode.findData(settings.values['library_mode'])))
+        self.library_mode.setToolTip('온라인은 메타데이터 후보입니다. 표시 권한이 확인된 썸네일만 불러옵니다.')
+        tools.addWidget(self.library_mode)
         self.source_filter=QComboBox()
         self.source_filter.addItem('전체 출처',None)
         for name,category in [('공식 사진','official'),('SNS','social'),('언론사','press'),('팬 촬영','fan'),('사용자 등록','user')]:self.source_filter.addItem(name,'category:'+category)
@@ -146,7 +157,7 @@ class MainWindow(QMainWindow):
         self.slider.setToolTip('썸네일 크기')
         tools.addWidget(self.slider)
         content.addLayout(tools)
-        self.model=GalleryModel(db,self)
+        self.model=GalleryModel(LibraryRepository(db,settings.values['library_mode']),self)
         self.gallery=GalleryView(self.model,settings.cache,self)
         self.gallery.set_size(self.slider.value())
         content.addWidget(self.gallery,1)
@@ -157,9 +168,12 @@ class MainWindow(QMainWindow):
         content.addWidget(self.empty,1)
         self.empty.hide()
         self.splitter.addWidget(center)
-        self.info_panel=QWidget()
+        self.info_panel=QScrollArea()
+        self.info_panel.setWidgetResizable(True);self.info_panel.setFrameShape(QFrame.Shape.NoFrame)
+        self.info_panel.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        info_content=QWidget();self.info_panel.setWidget(info_content)
         self.info_panel.setMinimumWidth(210)
-        info=QVBoxLayout(self.info_panel)
+        info=QVBoxLayout(info_content)
         info.setContentsMargins(20,28,20,20)
         label=QLabel('PHOTO DETAILS')
         label.setObjectName('eyebrow')
@@ -169,11 +183,13 @@ class MainWindow(QMainWindow):
         self.info_name.setObjectName('infoTitle')
         self.info_name.setTextFormat(Qt.TextFormat.PlainText)
         self.info_name.setWordWrap(True)
+        self.info_name.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
         info.addWidget(self.info_name)
         self.info_text=QLabel('해상도, 보관 위치와 연결 정보를\n여기에서 확인할 수 있습니다.')
         self.info_text.setObjectName('muted')
         self.info_text.setTextFormat(Qt.TextFormat.PlainText)
         self.info_text.setWordWrap(True)
+        self.info_text.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
         self.info_text.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         info.addWidget(self.info_text)
         self.fav_button=self.button('☆ 즐겨찾기',self.toggle_favorite)
@@ -184,6 +200,10 @@ class MainWindow(QMainWindow):
         info.addWidget(self.related_button)
         self.relink_button=self.button('원본 다시 연결',self.relink)
         info.addWidget(self.relink_button)
+        self.preserve_button=self.button('원본 영구 보관',self.preserve_selected)
+        self.source_button=self.button('출처 페이지 열기',self.open_selected_source)
+        info.addWidget(self.preserve_button);info.addWidget(self.source_button)
+        self.preserve_button.setEnabled(False);self.source_button.setEnabled(False)
         for b in (self.fav_button,self.associate_button,self.relink_button,self.related_button):b.setEnabled(False)
         info.addStretch()
         label=QLabel('원본 파일은 변경하지 않습니다.\n등록일과 촬영일은 별도로 관리합니다.')
@@ -208,6 +228,7 @@ class MainWindow(QMainWindow):
         self.search.textChanged.connect(lambda:self.search_timer.start())
         self.sort.currentIndexChanged.connect(self.sort_changed)
         self.source_filter.currentIndexChanged.connect(lambda:self.reload())
+        self.library_mode.currentIndexChanged.connect(self.library_mode_changed)
         self.slider.valueChanged.connect(self.gallery.set_size)
         self.model.changed.connect(self.loaded)
         self.model.failed.connect(self.error)
@@ -221,9 +242,13 @@ class MainWindow(QMainWindow):
         shortcut=QShortcut(QKeySequence('Ctrl+O'),self)
         shortcut.activated.connect(lambda:self.choose_import(False))
         self.online_service=OnlineService(db,settings,WikimediaProvider(HttpClient()))
+        self.library_service=LibraryService(self.online_service)
+        self.gallery.thumbnail_loader=self.library_service.preview
+        self.remote_timer=QTimer(self);self.remote_timer.setSingleShot(True);self.remote_timer.setInterval(650);self.remote_timer.timeout.connect(self.check_remote_refresh)
         self.online_runner=OnlineRunner(self.online_service,settings,self)
         self.gallery.verticalScrollBar().valueChanged.connect(lambda _:self.online_runner.defer())
         self.online_runner.library_changed.connect(self.online_changed)
+        self.online_runner.changed.connect(self.remote_changed)
         self.online_runner.state_changed.connect(self.sync_label.setText)
         self.online_runner.error.connect(lambda message:self.statusBar().showMessage(message,12000))
         self.refresh_source_filters()
@@ -246,11 +271,24 @@ class MainWindow(QMainWindow):
         self.source_filter.setCurrentIndex(max(0,index))
         self.source_filter.blockSignals(False)
 
+    def library_mode_changed(self):
+        self.settings.values['library_mode']=self.library_mode.currentData()
+        self.reload()
+
+    def remote_changed(self):
+        if self.library_mode.currentData()!='local' and not self.remote_timer.isActive():self.remote_timer.start()
+
+    def check_remote_refresh(self):
+        force=self.refresh_force;self.refresh_force=False
+        def done(version):
+            if force or version!=self.gallery_version:
+                self.gallery_version=version;self.reload(preserve=True)
+        self.meta_tasks.submit(lambda _:self.library.version(),done,self.error,key='gallery-revision')
+
     def online_changed(self):
-        # Keep foreground browsing stable when new verified originals are registered.
-        self.refresh_entities()
-        self.refresh_source_filters()
-        self.reload(preserve=True)
+        self.refresh_entities();self.refresh_source_filters()
+        self.refresh_force=True
+        if not self.remote_timer.isActive():self.remote_timer.start()
 
     def open_online(self):
         dialog=OnlineDialog(self.online_service,self.online_runner,self.settings,self)
@@ -340,7 +378,10 @@ class MainWindow(QMainWindow):
                 self.bookmark=(row['id'],self.gallery.visualRect(index).top(),self.selected['id'] if self.selected else None)
         self.selected=None
         self.info_name.setText('사진을 선택하세요')
+        self.info_text.setText('사진을 선택하면 보관 상태와 출처 정보를 확인할 수 있습니다.')
         for b in (self.fav_button,self.associate_button,self.relink_button,self.related_button):b.setEnabled(False)
+        self.preserve_button.setEnabled(False);self.source_button.setEnabled(False)
+        self.model.db=LibraryRepository(self.db,self.library_mode.currentData())
         self.model.reload(self.scope,self.search.text(),self.sort.currentData(),source_filter=self.selected_source_filter())
     def loaded(self,total):
         if self.bookmark is not None and not self.model.loading:
@@ -349,8 +390,9 @@ class MainWindow(QMainWindow):
             generation=self.model.generation
             scope,search,sort=self.model.scope,self.model.search,self.model.sort
             source_filter=self.model.source_filter
+            repository=self.model.db
             def locate(_):
-                return (self.db.locate(identity,scope,search,sort,source_filter),self.db.locate(selected_id,scope,search,sort,source_filter) if selected_id else None)
+                return (repository.locate(identity,scope,search,sort,source_filter),repository.locate(selected_id,scope,search,sort,source_filter) if selected_id else None)
             def restore(result):
                 if self.model.generation!=generation:return
                 position,selected=result
@@ -389,7 +431,7 @@ class MainWindow(QMainWindow):
         menu.addAction('인물 · 솔로 추가',lambda:self.entity_dialog('person'))
         menu.exec(self.cursor().pos())
     def entity_dialog(self,kind,existing=None):
-        if EntityDialog(self.db,kind,self,existing).exec():self.refresh_entities()
+        if EntityDialog(self.db,kind,self,existing).exec():self.refresh_entities();self.reload(preserve=True)
     def entity_menu(self,pos):
         item=self.tree.itemAt(pos)
         data=item.data(0,Qt.ItemDataRole.UserRole) if item else None
@@ -451,6 +493,17 @@ class MainWindow(QMainWindow):
         self.info_name.setText(row['name'])
         self.fav_button.setText('★ 즐겨찾기 해제' if row['favorite'] else '☆ 즐겨찾기')
         for b in (self.fav_button,self.associate_button,self.relink_button,self.related_button):b.setEnabled(True)
+        self.preserve_button.setEnabled(remote(row));self.source_button.setEnabled(bool(row.get('page_url')))
+        self.relink_button.setEnabled(not remote(row));self.related_button.setEnabled(not remote(row))
+        if remote(row):
+            self.info_text.setText('출처와 이용 조건을 확인하는 중…')
+            def done(result):
+                if not self.selected or self.selected['id']!=row['id']:return
+                entry,people,groups=result
+                measured=f"캐시 실측 {entry['width']:,} × {entry['height']:,}" if entry['width'] and entry['height'] else f"미실측 · 제공처 선언 {entry['provided_width'] or '?'} × {entry['provided_height'] or '?'}"
+                self.info_text.setText('온라인 후보 · 영구 보관 전\n'+measured+'\n\n등장 확인: '+(', '.join(p['name'] for p in people) or '미확인')+'\n그룹 연결: '+(', '.join(g['name'] for g in groups) or '미연결')+'\n\n'+entry['page_url']+'\n'+entry['image_url']+'\n\n원본 열기는 보기 캐시를 사용합니다. 영구 보관은 별도로 요청하세요. 출처·사진별 권한이 필요합니다.')
+            self.meta_tasks.submit(lambda _:self.library.details(row['id']),done,self.error,key='remote-details')
+            return
         people,groups=self.db.associations(row['id'])
         self.info_text.setText(f"{row['width']:,} × {row['height']:,}\n{row['format']}  ·  {row['size']/1024/1024:.2f} MB\n\n인물: {', '.join(p['name'] for p in people) or '미연결'}\n그룹: {', '.join(g['name'] for g in groups) or '미연결'}\n\n{'앱 관리 원본' if row['managed'] else '외부 파일 참조'}\n{row['path']}")
         with self.db.connect() as conn:
@@ -468,7 +521,7 @@ class MainWindow(QMainWindow):
         def error(message):
             self.fav_button.setEnabled(self.selected is not None)
             self.error(message)
-        self.meta_tasks.submit(lambda _:self.db.favorite(identity,value),done,error)
+        self.meta_tasks.submit(lambda _:self.library.favorite(identity,value),done,error)
     def toggle_favorite(self):
         if not self.selected:return
         row=self.selected
@@ -483,6 +536,15 @@ class MainWindow(QMainWindow):
     def associate(self):
         if not self.selected:return
         row=self.selected
+        if remote(row):
+            def edit(result):
+                entities,associations=result
+                dialog=RemoteLinksDialog(entities,*associations,self)
+                if dialog.exec()!=QDialog.DialogCode.Accepted:return
+                people=dialog.selected(dialog.people);groups=dialog.selected(dialog.groups)
+                self.meta_tasks.submit(lambda _:self.library.associate(row['id'],people,groups),lambda _:self.reload(preserve=True),self.error)
+            self.meta_tasks.submit(lambda _:(self.db.entities(),self.library.associations(row['id'])),edit,self.error)
+            return
         dialog=ImportDialog(self.db,1,self)
         dialog.setWindowTitle('선택한 사진 연결')
         dialog.managed.hide()
@@ -499,20 +561,40 @@ class MainWindow(QMainWindow):
         index=self.gallery.indexAt(pos)
         if not index.isValid():return
         self.gallery.setCurrentIndex(index)
+        if self.selected is None:return
         menu=QMenu(self)
         menu.addAction('뷰어에서 열기',lambda:self.open_viewer(index))
-        menu.addAction('이 사진과 연관된 사진 찾기',self.open_related)
+        menu.addAction('이 사진과 연관된 사진 찾기',self.open_related).setEnabled(not remote(self.selected))
+        if remote(self.selected):
+            menu.addAction('원본 영구 보관',self.preserve_selected)
+            menu.addAction('출처 페이지 열기',self.open_selected_source)
         menu.addAction('즐겨찾기 전환',self.toggle_favorite)
         menu.addAction('그룹 · 인물 연결',self.associate)
-        menu.addAction('원본 다시 연결',self.relink)
+        menu.addAction('원본 다시 연결',self.relink).setEnabled(not remote(self.selected))
         menu.exec(self.gallery.viewport().mapToGlobal(pos))
     def open_related(self,identity=None):
         if not isinstance(identity,str):identity=self.selected['id'] if self.selected else None
         if not identity:return
+        if self.library.entry(identity)['kind']!='asset':
+            self.statusBar().showMessage('연관 사진 탐색은 원본 보관 후 사용할 수 있습니다.',6000);return
         dialog=RelatedDialog(self.db,self.settings,identity,self)
         with self.online_runner.foreground():dialog.exec()
         dialog.deleteLater()
         self.reload(preserve=True)
+
+    def preserve_selected(self):
+        if not self.selected or not remote(self.selected):return
+        row=dict(self.selected);self.preserve_button.setEnabled(False)
+        def done(identity):
+            self.online_runner.request(identity)
+            self.statusBar().showMessage('원본 보관을 요청했습니다. 진행 상황은 온라인 → 작업 상태에서 확인하세요.',8000)
+            self.preserve_button.setEnabled(bool(self.selected and remote(self.selected)))
+        self.meta_tasks.submit(lambda _:self.library_service.preserve(row),done,self.error)
+
+    def open_selected_source(self):
+        if not self.selected:return
+        url=self.selected.get('page_url','')
+        if clean_url(url,url):QDesktopServices.openUrl(QUrl(url))
 
     def open_viewer(self,index):
         if not index.isValid() or self.model.row_at(index.row()) is None:return
@@ -521,7 +603,8 @@ class MainWindow(QMainWindow):
         source_filter=self.model.source_filter
         base=(index.row()//self.model.PAGE_SIZE)*self.model.PAGE_SIZE
         seed=[dict(r) for r in self.model.pages[base//self.model.PAGE_SIZE]]
-        viewer=Viewer(seed,index.row()-base,self,self.settings.values['viewer_mode'],lambda offset:self.db.query(scope,search,sort,offset,source_filter=source_filter),self.model.total,base_index=base,related_repo=RelatedRepository(self.db),related_cache=self.settings.cache)
+        repository=self.model.db
+        viewer=Viewer(seed,index.row()-base,self,self.settings.values['viewer_mode'],lambda offset:repository.query(scope,search,sort,offset,source_filter=source_filter),self.model.total,base_index=base,related_repo=RelatedRepository(self.db),related_cache=self.settings.cache,row_resolver=self.library_service.original)
         def favorite(identity,value):
             self.persist_favorite(identity,value)
         viewer.favorite_changed.connect(favorite)
@@ -546,6 +629,7 @@ class MainWindow(QMainWindow):
             self.import_cancel.set()
             self.statusBar().showMessage('현재 파일 작업을 마친 뒤 종료합니다.')
         self.search_timer.stop()
+        self.remote_timer.stop()
         self.online_runner.stop()
         self.gallery.close_tasks()
         self.model.close_tasks()
