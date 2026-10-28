@@ -26,6 +26,7 @@ from .page_discovery import clean_url
 class MainWindow(QMainWindow):
     import_progress = Signal(int)
     search_results_ready = Signal(str)
+    search_activity_event = Signal(str,object)
     def __init__(self,db,settings):
         super().__init__()
         self.db,self.settings=db,settings
@@ -40,6 +41,7 @@ class MainWindow(QMainWindow):
         if settings.values.get('sort')=='color_share' and not self.analysis_filter.color:settings.values['sort']='newest'
         self.analysis_dialog=None
         self.search_session=None;self.search_flight=None;self.search_auto_ready=False
+        self.search_progress_token=None;self.search_request_serial=0
         self.search_tasks=Tasks(self,1)
         from .upscale_service import UpscaleService
         self.upscale_service=UpscaleService(db,settings);self.upscale_service.recover();self.upscale_dialogs=[]
@@ -90,6 +92,11 @@ class MainWindow(QMainWindow):
         for widget in (self.search_composition,self.search_unknown,self.next_search,self.search_auto):
             top.removeWidget(widget);search_row.addWidget(widget)
         search_row.addStretch();outer.addWidget(search_controls)
+        from .search_activity import SearchActivity
+        self.search_activity=SearchActivity(self)
+        self.search_activity.stop_requested.connect(self.stop_internet_search)
+        self.search_activity_event.connect(self.update_search_activity)
+        outer.addWidget(self.search_activity)
         self.splitter=QSplitter()
         outer.addWidget(self.splitter,1)
         self.sidebar=QWidget()
@@ -186,6 +193,7 @@ class MainWindow(QMainWindow):
         content.addLayout(tools)
         self.model=GalleryModel(LibraryRepository(db,settings.values['library_mode'],self.analysis_filter),self)
         self.gallery=GalleryView(self.model,settings.cache,self)
+        self.gallery.preview_progress.connect(self.search_activity.preview_progress)
         self.gallery.set_size(self.slider.value())
         content.addWidget(self.gallery,1)
         self.empty=QLabel('아직 사진이 없습니다\n\n사진을 가져오거나 그룹과 인물을 먼저 등록해 보세요.')
@@ -430,6 +438,8 @@ class MainWindow(QMainWindow):
         self.subtitle.setText('직접 연결한 인물 사진')
         self.reload()
     def reload(self,preserve=False):
+        if not self.scope or self.scope[0]!='search':
+            self.search_progress_token=None;self.search_activity.dismiss()
         self.bookmark=None
         if preserve:
             index=self.gallery.indexAt(QPoint(12,12))
@@ -583,7 +593,11 @@ class MainWindow(QMainWindow):
     def next_internet_page(self):
         if not self.search_session or (self.search_flight and not self.search_flight.cancelled.is_set()):return
         session=self.search_session;self.search_auto_ready=False;self.next_search.setEnabled(False);self.sync_label.setText('검색 중')
+        self.search_request_serial+=1;token=f'{session}:{self.search_request_serial}';self.search_progress_token=token
+        names={row['id']:row['name'] for row in self.online_service.web.repo.profiles()}
+        self.search_activity.begin(session,{name:names.get(name,name) for name in self.internet_search.providers})
         def done(result):
+            if self.search_progress_token!=token:return
             self.search_flight=None
             if self.search_session!=session:return
             self.reload(preserve=True);self.next_search.setEnabled(result['state'] not in ('exhausted','blocked'))
@@ -594,14 +608,28 @@ class MainWindow(QMainWindow):
             elif not result['added']:status='새 후보 없음 · 더 검색으로 재시도'
             else:status='다음 결과 있음 · 스크롤 시 추가 검색'
             self.sync_label.setText(status)
+            self.search_activity.finish(session,status+f' · 이번 요청 새 후보 {result["added"]:,}개')
         def failed(message):
+            if self.search_progress_token!=token:return
             self.search_flight=None
             if self.search_session!=session:return
             self.search_auto_ready=False
             self.sync_label.setText('검색 불가 · 확인 필요')
             self.next_search.setEnabled(self.internet_search.session(session)['state']!='blocked')
             self.empty.setText('온라인 검색을 완료하지 못했습니다\n\n'+message);self.statusBar().showMessage(message,20000)
-        self.search_flight=self.search_tasks.submit(lambda cancel:self.internet_search.page(session,cancel,self.search_results_ready.emit),done,failed,key='internet-search')
+            self.search_activity.finish(session,'검색 실패 · '+message[:180])
+        self.search_flight=self.search_tasks.submit(lambda cancel:self.internet_search.page(session,cancel,self.search_results_ready.emit,lambda event:self.search_activity_event.emit(token,event)),done,failed,key='internet-search')
+
+    def update_search_activity(self,token,event):
+        if token==self.search_progress_token and self.search_session:
+            self.search_activity.update_event(self.search_session,event)
+
+    def stop_internet_search(self):
+        if self.search_flight:self.search_flight.cancelled.set()
+        self.search_flight=None;self.search_progress_token=None;self.search_auto_ready=False;self.search_scroll_timer.stop()
+        self.next_search.setEnabled(bool(self.search_session));self.sync_label.setText('검색 중단됨')
+        self.search_activity.finish(self.search_session,'검색 중단 · 이미 받은 후보는 유지합니다.',cancelled=True)
+        if self.search_session:self.reload(preserve=True)
 
     def search_near_bottom(self):
         # Only user scroll gestures arm this timer. Model resets/anchor restoration
@@ -863,6 +891,7 @@ class MainWindow(QMainWindow):
         if self.import_job:
             self.import_cancel.set()
             self.statusBar().showMessage('현재 파일 작업을 마친 뒤 종료합니다.')
+        self.search_activity.dismiss();self.search_progress_token=None
         self.search_tasks.stop()
         self.search_timer.stop()
         self.remote_timer.stop()

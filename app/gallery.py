@@ -154,6 +154,7 @@ class GalleryModel(QAbstractListModel):
 
 class GalleryView(QListView):
     more_requested = Signal()
+    preview_progress = Signal(int,int,int)
 
     def wheelEvent(self,event):
         downward=event.angleDelta().y()<0 or event.pixelDelta().y()<0
@@ -276,6 +277,7 @@ class GalleryView(QListView):
                 return decode_preview(make_thumbnail(path,cache,key),512)
             job = self.tasks.submit(decode,done,error)
             self.pending[key] = (token,job)
+        self.preview_progress.emit(len(desired.intersection(self.thumbs)),len(desired.intersection(self.pending)),len(desired.intersection(self.errors)))
     def restore_anchor(self, position, y_offset, selected_position=None):
         self.anchor = position,y_offset,selected_position,time.monotonic()+5
         self.anchor_signature=None;self.anchor_stable=0

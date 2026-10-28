@@ -73,19 +73,20 @@ class SearchService:
         suffix=suffix.strip()
         ending=' '+suffix
         return variant[:-len(ending)] if suffix and variant.endswith(ending) else variant
-    def page(self,identity,cancelled,on_update=None):
+    def page(self,identity,cancelled,on_update=None,on_progress=None):
         session=self.session(identity)
         if cancelled.is_set():raise Cancelled()
         if session['state']=='exhausted':return dict(added=0,state='exhausted')
         if session['state']=='blocked':return dict(added=0,state='blocked',error=session['message'])
-        if len(self.providers)>1:return self._parallel_page(identity,session,cancelled,on_update)
+        if len(self.providers)>1:return self._parallel_page(identity,session,cancelled,on_update,on_progress)
         plans=[];index=session["variant"]
         try:
             if not self.providers:raise RemoteError("Wikimedia는 검색에서 제외됐습니다. 다른 검색 출처의 실제 접근·이용 조건 확인이 필요합니다. 현재 검증된 검색 출처가 없습니다.",blocked=True)
             variants=json.loads(session['variants']);index=session['variant'];cursor=json.loads(session['cursor']) if session['cursor'] else None
             plans=[(provider,variant) for variant in variants for provider in self.providers.values()]
             provider,query=plans[index]
-            entries,next_cursor=provider.search_images(self.provider_query(provider,query,session),cursor,cancelled)
+            if on_progress:on_progress(dict(source=provider.name,state='queued'))
+            entries,next_cursor=self._request(provider,self.provider_query(provider,query,session),cursor,cancelled,on_progress)
             if cancelled.is_set():raise Cancelled()
             if next_cursor==cursor and next_cursor is not None:raise RemoteError('제공처가 같은 커서를 반복해 추가 검색을 중단했습니다.')
             with self.db.connect() as c:
@@ -96,16 +97,23 @@ class SearchService:
                 if next_cursor is None:index+=1
                 state='exhausted' if index>=len(plans) else 'ready'
                 c.execute('UPDATE search_sessions SET variant=?,cursor=?,state=?,message=?,updated=? WHERE id=?',(index,json.dumps(next_cursor) if next_cursor is not None else None,state,'',time.time(),identity))
+            if on_progress:on_progress(dict(source=provider.name,state='complete',added=added))
             return dict(added=added,state=state)
         except Cancelled:raise
         except Exception as error:
+            if on_progress and plans:on_progress(dict(source=plans[index][0].name,state='failed',error=str(error)))
             if plans and index+1<len(plans) and not getattr(error,'blocked',False):
                 with self.db.connect() as c:c.execute("UPDATE search_sessions SET variant=?,cursor=NULL,state='ready',message=?,updated=? WHERE id=?",(index+1,str(error),time.time(),identity))
                 return dict(added=0,state="ready",error=str(error))
             with self.db.connect() as c:c.execute('UPDATE search_sessions SET state=?,message=?,updated=? WHERE id=?',('blocked' if getattr(error,'blocked',False) else 'error',str(error),time.time(),identity))
             raise
 
-    def _parallel_page(self,identity,session,cancelled,on_update):
+    def _request(self,provider,query,cursor,cancelled,on_progress):
+        if cancelled.is_set():raise Cancelled()
+        if on_progress:on_progress(dict(source=provider.name,state='running'))
+        return provider.search_images(query,cursor,cancelled)
+
+    def _parallel_page(self,identity,session,cancelled,on_update,on_progress=None):
         from concurrent.futures import ThreadPoolExecutor,as_completed
         variants=json.loads(session['variants']);index=session['variant']
         if index>=len(variants):return dict(added=0,state='exhausted')
@@ -113,8 +121,10 @@ class SearchService:
         states=saved.get('providers',{});disabled=set(saved.get('disabled',[]))
         names=sorted((name for name in self.providers if name not in disabled and states.get(name,{}).get('state','ready')=='ready'),key=lambda name:states.get(name,{}).get('pages',0))
         added=0;errors=[]
+        if on_progress:
+            for name in names:on_progress(dict(source=name,state='queued'))
         with ThreadPoolExecutor(max_workers=2,thread_name_prefix='image-search') as executor:
-            futures={executor.submit(self.providers[name].search_images,self.provider_query(self.providers[name],variants[index],session),states.get(name,{}).get('cursor'),cancelled):name for name in names}
+            futures={executor.submit(self._request,self.providers[name],self.provider_query(self.providers[name],variants[index],session),states.get(name,{}).get('cursor'),cancelled,on_progress):name for name in names}
             for future in as_completed(futures):
                 name=futures[future]
                 if cancelled.is_set():raise Cancelled()
@@ -124,15 +134,19 @@ class SearchService:
                     if cursor is not None and cursor==previous:raise RemoteError('제공처 커서가 반복됩니다.')
                     with self.db.connect() as c:
                         c.execute('BEGIN IMMEDIATE')
+                        batch_added=0
                         position=c.execute('SELECT COALESCE(MAX(position),-1)+1 FROM search_hits WHERE session_id=?',(identity,)).fetchone()[0]
                         for entry in entries:
                             if cancelled.is_set():raise Cancelled()
                             inserted=c.execute('INSERT OR IGNORE INTO search_hits VALUES(?,?,?)',(identity,entry,position)).rowcount
-                            if inserted:added+=1;position+=1
+                            if inserted:batch_added+=1;position+=1
                         states[name]=dict(state='ready' if cursor is not None else 'done',cursor=cursor,pages=states.get(name,{}).get('pages',0)+1)
+                    added+=batch_added
+                    if on_progress:on_progress(dict(source=name,state='complete',added=batch_added))
                     if on_update:on_update(identity)
                 except Cancelled:raise
                 except Exception as error:
+                    if on_progress:on_progress(dict(source=name,state='failed',error=str(error)))
                     states[name]=dict(state='failed',cursor=None,error=str(error));errors.append(name+': '+str(error))
                     if getattr(error,'blocked',False):disabled.add(name)
         remaining=any(name not in disabled and states.get(name,{}).get('state','ready')=='ready' for name in self.providers)
