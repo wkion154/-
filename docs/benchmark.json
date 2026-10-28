@@ -1,0 +1,74 @@
+{
+  "python": "3.12.14",
+  "os": "Linux-6.18.55-x86_64-with-glibc2.41",
+  "sqlite": "3.53.1",
+  "scope": "Synthetic metadata only; warm filesystem cache, local machine. No Windows/GPU or real-image scrolling performance guarantee.",
+  "results": [
+    {
+      "metadata_count": 100,
+      "queries": {
+        "first_page": {
+          "median_ms": 2.461,
+          "max_ms": 3.464
+        },
+        "last_page": {
+          "median_ms": 2.167,
+          "max_ms": 2.391
+        },
+        "name_search": {
+          "median_ms": 2.446,
+          "max_ms": 3.262
+        },
+        "resolution_sort": {
+          "median_ms": 2.238,
+          "max_ms": 2.53
+        }
+      },
+      "python_peak_mib": 0.2
+    },
+    {
+      "metadata_count": 1000,
+      "queries": {
+        "first_page": {
+          "median_ms": 5.487,
+          "max_ms": 5.86
+        },
+        "last_page": {
+          "median_ms": 5.653,
+          "max_ms": 6.296
+        },
+        "name_search": {
+          "median_ms": 3.69,
+          "max_ms": 6.035
+        },
+        "resolution_sort": {
+          "median_ms": 5.877,
+          "max_ms": 6.386
+        }
+      },
+      "python_peak_mib": 0.56
+    },
+    {
+      "metadata_count": 10000,
+      "queries": {
+        "first_page": {
+          "median_ms": 5.76,
+          "max_ms": 8.101
+        },
+        "last_page": {
+          "median_ms": 5.845,
+          "max_ms": 6.362
+        },
+        "name_search": {
+          "median_ms": 12.631,
+          "max_ms": 13.148
+        },
+        "resolution_sort": {
+          "median_ms": 5.637,
+          "max_ms": 5.924
+        }
+      },
+      "python_peak_mib": 3.25
+    }
+  ]
+}
