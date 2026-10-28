@@ -53,10 +53,21 @@ class SearchService:
             row=c.execute('SELECT * FROM search_sessions WHERE id=?',(identity,)).fetchone()
             if row is None:raise ValueError('검색 세션이 없습니다.')
             return dict(row)
+    def provider_query(self,provider,variant,session):
+        if not getattr(provider,'identity_search',False):return variant
+        # Entity pickers accept an exact name, not free-text composition/color
+        # hints. The same filters still apply to the resulting gallery.
+        filters=json.loads(session['filters'])
+        suffix=COMPOSITION_TERMS.get(filters.get('composition'),'')
+        if filters.get('color'):suffix+=' '+filters['color']
+        suffix=suffix.strip()
+        ending=' '+suffix
+        return variant[:-len(ending)] if suffix and variant.endswith(ending) else variant
     def page(self,identity,cancelled,on_update=None):
         session=self.session(identity)
         if cancelled.is_set():raise Cancelled()
         if session['state']=='exhausted':return dict(added=0,state='exhausted')
+        if session['state']=='blocked':return dict(added=0,state='blocked',error=session['message'])
         if len(self.providers)>1:return self._parallel_page(identity,session,cancelled,on_update)
         plans=[];index=session["variant"]
         try:
@@ -64,7 +75,7 @@ class SearchService:
             variants=json.loads(session['variants']);index=session['variant'];cursor=json.loads(session['cursor']) if session['cursor'] else None
             plans=[(provider,variant) for variant in variants for provider in self.providers.values()]
             provider,query=plans[index]
-            entries,next_cursor=provider.search_images(query,cursor,cancelled)
+            entries,next_cursor=provider.search_images(self.provider_query(provider,query,session),cursor,cancelled)
             if cancelled.is_set():raise Cancelled()
             if next_cursor==cursor and next_cursor is not None:raise RemoteError('제공처가 같은 커서를 반복해 추가 검색을 중단했습니다.')
             with self.db.connect() as c:
@@ -74,11 +85,11 @@ class SearchService:
                     if inserted:added+=1;position+=1
                 if next_cursor is None:index+=1
                 state='exhausted' if index>=len(plans) else 'ready'
-                c.execute('UPDATE search_sessions SET variant=?,cursor=?,state=?,message=?,updated=? WHERE id=?',(index,json.dumps(next_cursor) if next_cursor else None,state,'',time.time(),identity))
+                c.execute('UPDATE search_sessions SET variant=?,cursor=?,state=?,message=?,updated=? WHERE id=?',(index,json.dumps(next_cursor) if next_cursor is not None else None,state,'',time.time(),identity))
             return dict(added=added,state=state)
         except Cancelled:raise
         except Exception as error:
-            if plans and index+1<len(plans):
+            if plans and index+1<len(plans) and not getattr(error,'blocked',False):
                 with self.db.connect() as c:c.execute("UPDATE search_sessions SET variant=?,cursor=NULL,state='ready',message=?,updated=? WHERE id=?",(index+1,str(error),time.time(),identity))
                 return dict(added=0,state="ready",error=str(error))
             with self.db.connect() as c:c.execute('UPDATE search_sessions SET state=?,message=?,updated=? WHERE id=?',('blocked' if getattr(error,'blocked',False) else 'error',str(error),time.time(),identity))
@@ -93,7 +104,7 @@ class SearchService:
         names=sorted((name for name in self.providers if name not in disabled and states.get(name,{}).get('state','ready')=='ready'),key=lambda name:states.get(name,{}).get('pages',0))[:2]
         added=0;errors=[]
         with ThreadPoolExecutor(max_workers=2,thread_name_prefix='image-search') as executor:
-            futures={executor.submit(self.providers[name].search_images,variants[index],states.get(name,{}).get('cursor'),cancelled):name for name in names}
+            futures={executor.submit(self.providers[name].search_images,self.provider_query(self.providers[name],variants[index],session),states.get(name,{}).get('cursor'),cancelled):name for name in names}
             for future in as_completed(futures):
                 name=futures[future]
                 if cancelled.is_set():raise Cancelled()

@@ -534,7 +534,9 @@ class MainWindow(QMainWindow):
         def failed(message):
             self.search_flight=None
             if self.search_session!=session:return
-            self.sync_label.setText('검색 불가 · 확인 필요');self.next_search.setEnabled(True)
+            self.search_auto_ready=False
+            self.sync_label.setText('검색 불가 · 확인 필요')
+            self.next_search.setEnabled(self.internet_search.session(session)['state']!='blocked')
             self.empty.setText('온라인 검색을 완료하지 못했습니다\n\n'+message);self.statusBar().showMessage(message,20000)
         self.search_flight=self.search_tasks.submit(lambda cancel:self.internet_search.page(session,cancel,self.search_results_ready.emit),done,failed,key='internet-search')
 

@@ -163,3 +163,67 @@ def test_search_materialized_members_work_with_color_cte_and_explicit_sort(searc
     for sort in ('discovery','newest','name','color_share'):
         rows,total=library.query(scope=('search',session),sort=sort)
         assert total==1 and library.locate(rows[0]['id'],scope=('search',session),sort=sort)==0
+
+
+def test_single_blocked_provider_stops_before_trying_aliases(searches):
+    search,provider=searches
+    search.db.add_entity('person','장원영',aliases='Jang Wonyoung,IVE Wonyoung')
+    def denied(*args):
+        provider.calls.append(args)
+        raise RemoteError('Access denied',blocked=True)
+    provider.search_images=denied
+    session=search.start('장원영',AnalysisFilter())
+    with pytest.raises(RemoteError,match='Access denied'):
+        search.page(session,threading.Event())
+    assert search.session(session)['state']=='blocked'
+    assert search.session(session)['variant']==0 and len(provider.calls)==1
+    again=search.page(session,threading.Event())
+    assert again['state']=='blocked' and again['added']==0 and len(provider.calls)==1
+
+
+@pytest.mark.parametrize('cursor',[0,{},[],False])
+def test_falsey_page_cursor_is_preserved(searches,cursor):
+    search,provider=searches;calls=[]
+    def pages(query,previous,cancelled):
+        calls.append(previous)
+        return [],cursor if len(calls)==1 else None
+    provider.search_images=pages
+    session=search.start('IVE',AnalysisFilter())
+    assert search.page(session,threading.Event())['state']=='ready'
+    assert search.page(session,threading.Event())['state']=='exhausted'
+    assert calls==[None,cursor]
+
+
+@pytest.mark.parametrize('parallel',[False,True])
+def test_entity_picker_gets_exact_alias_without_discovery_hints(searches,parallel):
+    search,provider=searches;provider.identity_search=True
+    search.db.add_entity('person','장원영',aliases='Jang Wonyoung')
+    free_queries=[]
+    class FreeText:
+        name='free-text-fixture'
+        def search_images(self,query,cursor,cancelled):
+            free_queries.append(query);return [],None
+    if parallel:search.providers[FreeText.name]=FreeText()
+    filters=AnalysisFilter(composition='full_body',color='#ff88aa')
+    session=search.start('장원영',filters)
+    for _ in range(8):
+        if search.page(session,threading.Event())['state']=='exhausted':break
+    assert set(query for query,_ in provider.calls)=={'장원영','Jang Wonyoung'}
+    if parallel:assert free_queries==['장원영 full body full length #ff88aa','Jang Wonyoung full body full length #ff88aa']
+
+
+def test_blocked_search_disables_more_button_and_new_search_can_retry(qtbot,searches):
+    from app.main_window import MainWindow
+    search,provider=searches;calls=[]
+    def denied(*args):
+        calls.append(1);raise RemoteError('Fixture blocked',blocked=True)
+    provider.search_images=denied
+    window=MainWindow(search.db,search.online.settings);qtbot.addWidget(window)
+    window.online_runner.timer.stop();window.internet_search.providers={provider.name:provider}
+    window.search.setText('장원영');window.start_internet_search()
+    qtbot.waitUntil(lambda:window.search_flight is None)
+    assert not window.next_search.isEnabled() and not window.search_auto_ready
+    window.start_internet_search()
+    qtbot.waitUntil(lambda:window.search_flight is None)
+    assert len(calls)==2
+    window.close()

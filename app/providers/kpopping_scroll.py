@@ -2,6 +2,7 @@
 Does not guess endpoints, clear artist filters, bypass barriers or download originals.
 """
 import time
+import re
 from urllib.parse import urlsplit,parse_qs
 from .kpopping import parse_observation
 from .http import Cancelled,RemoteError
@@ -11,9 +12,32 @@ SCRIPT='''(images)=>images.slice(0,600).map(i=>({src:i.src,currentSrc:i.currentS
 
 def artist_filter(url):
     p=urlsplit(url)
-    if p.scheme!='https' or p.hostname!='kpopping.com' or p.path!='/kpics' or p.username or p.password:raise RemoteError('Kpopping 사진 목록 페이지가 아닙니다.',blocked=True)
+    if p.scheme!='https' or p.hostname!='kpopping.com' or p.port not in (None,443) or p.path!='/kpics' or p.username or p.password:raise RemoteError('Kpopping 사진 목록 페이지가 아닙니다.',blocked=True)
     query=parse_qs(p.query)
+    groups=tuple(query.get('group',[]))
+    if groups:
+        if query.get('idol') or query.get('idolName'):
+            raise RemoteError('인물과 그룹 필터가 함께 지정돼 검색 대상을 확인할 수 없습니다.',blocked=True)
+        # Keep existing person cursors compatible; distinguish group IDs so an
+        # equal-looking ID can never be replayed against a different entity type.
+        return tuple('group:'+value for value in groups),tuple(query.get('groupName',[]))
     return tuple(query.get('idol',[])),tuple(query.get('idolName',[]))
+
+
+def selected_artist_pattern(url):
+    ids,names=artist_filter(url)
+    if len(ids)!=1 or len(names)!=1 or not names[0].strip():
+        raise RemoteError('검색 인물·그룹 ID와 이름을 하나씩 확인해야 합니다.',blocked=True)
+    # Observed in the current public Kpics UI: the selected entity is shown
+    # as a visible "Filtering: <name>" button after client hydration.
+    name=r'\s+'.join(re.escape(part) for part in names[0].split())
+    return re.compile(r'^\s*Filtering:\s*'+name+r'\s*$',re.I)
+
+
+def require_visible_artist(page):
+    badge=page.get_by_role('button',name=selected_artist_pattern(page.url))
+    if not badge.count() or not any(badge.nth(i).is_visible() for i in range(badge.count())):
+        raise RemoteError('주소의 인물 필터가 실제 화면에 적용됐는지 확인하지 못했습니다. 전체 목록을 검색 결과로 수집하지 않습니다.',blocked=True)
 
 
 def capture_batch(page,query,cursor,cancelled,*,rounds=4,wait_ms=700,stop_on_stale=True):
@@ -26,6 +50,7 @@ def capture_batch(page,query,cursor,cancelled,*,rounds=4,wait_ms=700,stop_on_sta
     for iteration in range(rounds):
         if cancelled.is_set():raise Cancelled()
         if artist_filter(page.url)!=current_filter:raise RemoteError('검색 인물 필터가 풀려 수집을 중단했습니다.',blocked=True)
+        require_visible_artist(page)
         title=page.title().lower()
         if any(word in title for word in ('captcha','just a moment','access denied','verify you are human')):raise RemoteError('접근 확인 화면입니다. 우회하지 않습니다.',blocked=True)
         rows=page.locator('img').evaluate_all(SCRIPT)

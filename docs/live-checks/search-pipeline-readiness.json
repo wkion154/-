@@ -1,0 +1,33 @@
+{
+  "checked_at": "2026-10-28T13:29:55.953231+00:00",
+  "photo_downloads_attempted": false,
+  "permissions_changed": false,
+  "stage1_complete": false,
+  "sources": [
+    {
+      "source": "kpopping-browser",
+      "url": "https://kpopping.com/kpics?idol=4ce3bdec-4bb1-4364-b84f-f3684cfc62d9&idolName=Jang%20Wonyoung",
+      "metadata_access": true,
+      "artist_filter_verified": false,
+      "viewer_verified": false,
+      "save_verified": false,
+      "stage1_complete": false,
+      "status": "page_only_filter_unverified",
+      "title": "HQ Kpop Photos — Concept Photos, Teasers & Photoshoots | kpopping",
+      "html_image_elements": 17,
+      "note": "A query string and HTTP 200 do not prove the selected artist filter. Windows browser validation remains required."
+    },
+    {
+      "source": "flickr-public-feed",
+      "url": "https://www.flickr.com/services/feeds/photos_public.gne?tags=jangwonyoung&format=json&nojsoncallback=1",
+      "metadata_access": false,
+      "artist_filter_verified": false,
+      "viewer_verified": false,
+      "save_verified": false,
+      "stage1_complete": false,
+      "status": "blocked",
+      "error": "robots 정책에서 이 경로의 자동 접근을 허용하지 않습니다.",
+      "http_status": null
+    }
+  ]
+}

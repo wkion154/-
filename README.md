@@ -1,3 +1,15 @@
+## 최신 Windows 다운로드 · 검색 연결 실험판
+
+[ZIP 다운로드](https://github.com/wkion154/-/raw/refs/heads/k-idol-archive/releases/K-IDOL-ARCHIVE_Search_Stage1_Experimental.zip)
+
+전체를 새 폴더에 압축 해제하고 `START_WINDOWS.bat`를 실행하세요. **Python 3.12와 Edge 또는 Chrome이 필요한 소스 실행판**이며 EXE 설치판은 아닙니다. 기존 데이터는 삭제하지 마세요.
+
+이번 수정은 실제 화면의 인물/그룹 필터 확인, 검색어와 구도·색상 힌트 분리, 추가 페이지·차단 상태 처리입니다. 앱에서 출처를 설정한 후 닫고 `CHECK_SEARCH_WINDOWS.bat`를 실행하면 같은 폴더에 `search-pipeline-report.json`이 생성됩니다. 기본 검사는 영구 보관이나 권한 자동 부여를 하지 않습니다.
+
+검증: 전체 테스트 218개 통과·24개 건너뜀, Linux 앱 기본 실행 및 ZIP 무결성 통과. **실제 Windows 검색/화면 동작은 미검증**입니다. Flickr는 현재 robots 정책에서 앱 접근이 차단됩니다. 1단계는 계속 진행 중입니다. 자세한 내용은 [Windows 실행 안내](WINDOWS_SEARCH_START.txt)를 확인하세요.
+
+---
+
 **검색 개편 1단계 Windows 앱 실험 ZIP:** [다운로드](https://github.com/wkion154/-/raw/refs/heads/k-idol-archive/releases/K-IDOL-ARCHIVE_Search_Stage1_Experimental.zip). 기존 앱에 Kpopping 브라우저 검색과 Flickr 공개 태그 피드 경로, 스크롤 추가 검색을 연결했습니다. `WINDOWS_SEARCH_START.txt`를 먼저 읽으세요. Flickr는 검색어별 최근 최대 20개이며 전체 이미지 검색 API가 아닙니다. 실제 Windows 앱 성공·다중 사이트 사진 표시·원본 확인은 아직 미검증입니다. Python으로 실행하는 실험용 소스 ZIP이며 EXE 또는 정식 완료판이 아닙니다.
 
 **Windows 접속 확인 도구:** [진단 ZIP 다운로드](https://github.com/wkion154/-/raw/refs/heads/k-idol-archive/releases/K-IDOL-ARCHIVE_Windows_Search_Check.zip). 압축 해제 후 `START_CHECK.bat` 실행 → 이름 입력 → 브라우저 검색 결과 확인 → 생성된 `search-report.json`을 대화에 첨부하세요. Python 3.12와 Edge/Chrome이 필요합니다. 진단 도구이며 완성된 검색 앱이 아닙니다. Windows 실기 미검증.

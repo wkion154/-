@@ -8,7 +8,7 @@ from urllib.robotparser import RobotFileParser
 def run(request):
     if platform.system()!='Windows':raise RuntimeError('이 브라우저 검색은 Windows 사용자 PC에서 실행해야 합니다.')
     from playwright.sync_api import sync_playwright
-    from .providers.kpopping_scroll import capture_replayed_batch,artist_filter
+    from .providers.kpopping_scroll import capture_replayed_batch,artist_filter,selected_artist_pattern,require_visible_artist
     import threading
     url=request['url'];host=urlsplit(url).hostname
     if host!='kpopping.com' or urlsplit(url).scheme!='https':raise ValueError('등록되지 않은 브라우저 검색 사이트입니다.')
@@ -43,12 +43,17 @@ def run(request):
                 if chosen is None:raise RuntimeError('정확히 대응하는 인물/그룹 선택지를 확인하지 못했습니다.')
                 chosen.click();page.wait_for_timeout(1000)
             if not artist_filter(page.url)[0]:raise RuntimeError('검색 인물 필터 적용을 확인하지 못했습니다.')
+            try:
+                page.get_by_role('button',name=selected_artist_pattern(page.url)).first.wait_for(state='visible',timeout=15000)
+            except Exception as error:
+                raise RuntimeError('사이트 화면의 인물 필터 적용을 확인하지 못했습니다. 페이지 로딩 또는 검색 구조를 확인하세요.') from error
+            require_visible_artist(page)
             if not rules.can_fetch('K-IDOL-ARCHIVE',page.url):raise RuntimeError('선택된 검색 경로의 자동 접근이 금지됐습니다.')
             # Capture intermediate DOMs too: virtualized cards can disappear
             # before the final replay scroll position is reached.
             batch=request.get('batch',0)
             items,cursor=capture_replayed_batch(page,request['query'],batch,request.get('scroll_cursor'),threading.Event())
-            return dict(page_url=page.url,title=page.title(),items=[dict(url=i.url,logical_key=i.logical_key,title=i.title,role=i.role,provenance=i.provenance) for i in items],scroll_cursor=cursor,next_batch=batch+1 if batch<20 else None,exhaustion_verified=False,automated_artist_selection=not bool(request.get('known_artist_page')))
+            return dict(page_url=page.url,title=page.title(),items=[dict(url=i.url,logical_key=i.logical_key,title=i.title,role=i.role,provenance=i.provenance) for i in items],scroll_cursor=cursor,next_batch=batch+1 if batch<20 else None,exhaustion_verified=False,filter_verified=True,automated_artist_selection=not bool(request.get('known_artist_page')))
         finally:browser.close()
 
 if __name__=='__main__':

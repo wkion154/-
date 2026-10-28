@@ -13,6 +13,7 @@ SPEC=dict(id='kpopping-browser',name='Kpopping · Windows 브라우저 실험',c
 
 class KpoppingBrowserProvider:
     name='kpopping-browser'
+    identity_search=True
     def __init__(self,online):self.online=online;online.web.repo.save_spec(SPEC)
     def search_images(self,query,cursor,cancelled):
         if platform.system()!='Windows':raise RemoteError('Windows 사용자 PC의 브라우저 검색 경로입니다.',blocked=True)
@@ -22,8 +23,9 @@ class KpoppingBrowserProvider:
             result=self._worker(dict(query=query,url=url,known_artist_page=bool(known),batch=(cursor or {}).get('batch',0),scroll_cursor=(cursor or {}).get('scroll_cursor')),cancelled)
         except Exception as error:
             self._audit(dict(query=query,state='error',error=str(error),stage1_complete=False));raise
-        self._audit(dict(query=query,state='browser_candidates_received',page_url=result['page_url'],candidate_count=len(result['items']),original_verified=False,stage1_complete=False))
+        self._audit(dict(query=query,state='browser_candidates_received',page_url=result['page_url'],candidate_count=len(result['items']),filter_verified=result.get('filter_verified') is True,original_verified=False,stage1_complete=False))
         if cancelled.is_set():raise Cancelled()
+        if result.get('filter_verified') is not True:raise RemoteError('브라우저가 실제 화면의 인물 필터를 확인하지 못했습니다.',blocked=True)
         if not artist_filter(result['page_url'])[0]:raise RemoteError('검색 인물 필터가 없습니다.',blocked=True)
         if known and artist_filter(result['page_url'])!=artist_filter(known):raise RemoteError('검색 인물 필터가 바뀌었습니다.',blocked=True)
         page_id=repo.add_page(self.name,result['page_url'])
@@ -32,7 +34,7 @@ class KpoppingBrowserProvider:
         from .http import validate_url
         for item in parsed.candidates:validate_url(item.url,SPEC['domains'])
         repo.require(self.name,'metadata_search');repo.index_page(repo.page(page_id),parsed)
-        rows=repo.images(page_id=page_id,limit=1000)
+        rows=repo.images_for_urls(page_id,[item.url for item in parsed.candidates])
         allow_reviewed_previews(repo,self.name,rows)
         next_cursor=dict(batch=result['next_batch']) if result['next_batch'] is not None else None
         if next_cursor is not None and result.get('scroll_cursor'):next_cursor['scroll_cursor']=result['scroll_cursor']

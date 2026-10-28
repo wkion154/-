@@ -15,7 +15,7 @@ def test_browser_adapter_uses_existing_gallery_and_preview_only_viewer(db,settin
     online.web.repo.grant_many(provider.name,dict(metadata_search='allowed',thumbnail='allowed'),evidence,enabled=True)
     monkeypatch.setattr(module.platform,'system',lambda:'Windows')
     url='https://kpopping.com/api/kpics-image?url=https%3A%2F%2Fcdn.kpopping.com%2Fkpics%2Ffixture.jpg&size=thumb'
-    monkeypatch.setattr(provider,'_worker',lambda request,cancel:dict(page_url=OBSERVED_PAGES['장원영'],title='FIXTURE',items=[dict(url=url,logical_key='photo',title='Fixture photo',role='observed_preview',provenance=[])],next_batch=1))
+    monkeypatch.setattr(provider,'_worker',lambda request,cancel:dict(page_url=OBSERVED_PAGES['장원영'],title='FIXTURE',filter_verified=True,items=[dict(url=url,logical_key='photo',title='Fixture photo',role='observed_preview',provenance=[])],next_batch=1))
     entries,cursor=provider.search_images('장원영',None,threading.Event());assert len(entries)==1 and cursor==dict(batch=1)
     def fixture_client(spec):
         client=FakeHttp(image_bytes());client.allowed_hosts=spec.domains;return client
@@ -32,3 +32,38 @@ def test_browser_adapter_refuses_unreviewed_source_and_preserves_item_denial(db,
     provider=KpoppingBrowserProvider(OnlineService(db,settings,None));monkeypatch.setattr(module.platform,'system',lambda:'Windows')
     monkeypatch.setattr(provider,'_worker',lambda *_:pytest.fail('Browser must not start before permission'))
     with pytest.raises(RemoteError):provider.search_images('장원영',None,threading.Event())
+
+
+def test_browser_batch_excludes_old_candidates_and_preserves_discovery_order(db,settings,monkeypatch):
+    import app.providers.kpopping_browser as module
+    provider=KpoppingBrowserProvider(OnlineService(db,settings,None));repo=provider.online.web.repo
+    repo.grant_many(provider.name,dict(metadata_search='allowed',thumbnail='allowed'),
+                    {'reference':'fixture://batch','note':'Synthetic only'},enabled=True)
+    monkeypatch.setattr(module.platform,'system',lambda:'Windows')
+    def item(number):
+        return dict(url=f'https://kpopping.com/api/kpics-image?url=https%3A%2F%2Fcdn.kpopping.com%2Fkpics%2F{number}.jpg&size=thumb',
+                    logical_key=str(number),title=str(number),provenance=[])
+    batches=[list(range(1005)),[1007,1006],[]]
+    monkeypatch.setattr(provider,'_worker',lambda *_:dict(page_url=OBSERVED_PAGES['장원영'],title='FIXTURE',filter_verified=True,
+                       items=[item(n) for n in batches.pop(0)],next_batch=1))
+    first,_=provider.search_images('장원영',None,threading.Event())
+    assert len(first)==1005
+    second,_=provider.search_images('장원영',{'batch':1},threading.Event())
+    assert [repo.image(identity[4:])['title'] for identity in second]==['1007','1006']
+    assert not set(first)&set(second)
+    empty,_=provider.search_images('장원영',{'batch':2},threading.Event())
+    assert empty==[]
+
+
+def test_worker_without_filter_confirmation_does_not_index(db,settings,monkeypatch):
+    import app.providers.kpopping_browser as module
+    provider=KpoppingBrowserProvider(OnlineService(db,settings,None));repo=provider.online.web.repo
+    repo.grant_many(provider.name,dict(metadata_search='allowed'),
+                    {'reference':'fixture://batch','note':'Synthetic only'},enabled=True)
+    monkeypatch.setattr(module.platform,'system',lambda:'Windows')
+    monkeypatch.setattr(provider,'_worker',lambda *_:dict(
+        page_url=OBSERVED_PAGES['장원영'],title='Unverified',items=[],next_batch=None))
+    with pytest.raises(RemoteError,match='실제 화면'):
+        provider.search_images('장원영',None,threading.Event())
+    with db.connect() as connection:
+        assert connection.execute('SELECT COUNT(*) FROM web_images').fetchone()[0]==0

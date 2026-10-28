@@ -122,6 +122,17 @@ class SourceRepository:
                     (identity,page['id'],page['source_id'],item.url,item.logical_key,item.title,item.role,item.declared_width,item.declared_height,json.dumps(item.provenance,ensure_ascii=False),self.clock()))
                 conn.execute('INSERT INTO resource_permissions(resource_id,operation,state,evidence,checked) VALUES(?,?,?,?,?) ON CONFLICT(resource_id,operation) DO NOTHING',('web:'+identity,'metadata_search','allowed',json.dumps({'reference':page['url'],'note':'Permitted page metadata indexing only; no binary/AI permission implied.'}),self.clock()))
 
+    def images_for_urls(self,page_id,urls):
+        """Return this discovery batch in order, without older page candidates."""
+        urls=list(dict.fromkeys(urls));found={}
+        with self.db.connect() as conn:
+            for offset in range(0,len(urls),400):
+                batch=urls[offset:offset+400]
+                placeholders=','.join('?' for _ in batch)
+                rows=conn.execute('SELECT w.*,p.url AS page_url,p.title AS page_title,p.published AS page_published,p.last_success AS page_checked FROM web_images w JOIN source_pages p ON p.id=w.page_id WHERE w.page_id=? AND w.url IN ('+placeholders+')',(page_id,*batch))
+                found.update((row['url'],dict(row)) for row in rows)
+        return [found[url] for url in urls if url in found]
+
     def images(self,source_id=None,page_id=None,offset=0,limit=200):
         where,args=[],[]
         if source_id:where.append('w.source_id=?');args.append(source_id)
