@@ -79,5 +79,36 @@ def test_one_failed_provider_does_not_block_the_next(searches):
         def search_images(self,*args):raise RemoteError('test failure')
     search.providers={'failed-fixture':Failed(),provider.name:provider}
     session=search.start('aespa',AnalysisFilter());result=search.page(session,threading.Event())
-    assert result['error']=='test failure' and result['state']=='ready'
-    assert search.page(session,threading.Event())['added']==1
+    assert 'test failure' in result['error'] and result['state']=='ready' and result['added']==1
+    assert search.page(session,threading.Event())['added']==0
+
+
+def test_fast_source_is_published_before_slow_source_finishes(searches):
+    import time
+    search,provider=searches;first_arrived=threading.Event();slow_entered=threading.Event();observed=[]
+    class Slow:
+        name='slow-fixture'
+        def search_images(self,*args):
+            slow_entered.set()
+            assert first_arrived.wait(3),'Fast source should publish before this source is released'
+            return [],None
+    search.providers={provider.name:provider,'slow-fixture':Slow()}
+    session=search.start('장원영',AnalysisFilter())
+    def partial(identity):
+        observed.append(LibraryRepository(search.db).query(scope=('search',identity))[1]);first_arrived.set()
+    result=search.page(session,threading.Event(),partial)
+    assert result['added']==1 and observed[0]==1 and slow_entered.is_set()
+
+
+def test_blocked_provider_is_not_retried_for_every_alias(searches):
+    search,provider=searches;calls=[]
+    class Blocked:
+        name='blocked-fixture'
+        def search_images(self,*args):calls.append(1);raise RemoteError('denied',blocked=True)
+    search.providers={provider.name:provider,'blocked-fixture':Blocked()}
+    search.db.add_entity('person','장원영',aliases='Jang Wonyoung,IVE Wonyoung')
+    session=search.start('장원영',AnalysisFilter())
+    for _ in range(8):
+        result=search.page(session,threading.Event())
+        if result['state']=='exhausted':break
+    assert len(calls)==1

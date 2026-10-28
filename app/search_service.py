@@ -47,10 +47,11 @@ class SearchService:
             row=c.execute('SELECT * FROM search_sessions WHERE id=?',(identity,)).fetchone()
             if row is None:raise ValueError('검색 세션이 없습니다.')
             return dict(row)
-    def page(self,identity,cancelled):
+    def page(self,identity,cancelled,on_update=None):
         session=self.session(identity)
         if cancelled.is_set():raise Cancelled()
         if session['state']=='exhausted':return dict(added=0,state='exhausted')
+        if len(self.providers)>1:return self._parallel_page(identity,session,cancelled,on_update)
         plans=[];index=session["variant"]
         try:
             if not self.providers:raise RemoteError("Wikimedia는 검색에서 제외됐습니다. 다른 검색 출처의 실제 접근·이용 조건 확인이 필요합니다. 현재 검증된 검색 출처가 없습니다.",blocked=True)
@@ -76,3 +77,42 @@ class SearchService:
                 return dict(added=0,state="ready",error=str(error))
             with self.db.connect() as c:c.execute('UPDATE search_sessions SET state=?,message=?,updated=? WHERE id=?',('blocked' if getattr(error,'blocked',False) else 'error',str(error),time.time(),identity))
             raise
+
+    def _parallel_page(self,identity,session,cancelled,on_update):
+        from concurrent.futures import ThreadPoolExecutor,as_completed
+        variants=json.loads(session['variants']);index=session['variant']
+        if index>=len(variants):return dict(added=0,state='exhausted')
+        saved=json.loads(session['cursor']) if session['cursor'] else {}
+        states=saved.get('providers',{});disabled=set(saved.get('disabled',[]))
+        names=sorted((name for name in self.providers if name not in disabled and states.get(name,{}).get('state','ready')=='ready'),key=lambda name:states.get(name,{}).get('pages',0))[:2]
+        added=0;errors=[]
+        with ThreadPoolExecutor(max_workers=2,thread_name_prefix='image-search') as executor:
+            futures={executor.submit(self.providers[name].search_images,variants[index],states.get(name,{}).get('cursor'),cancelled):name for name in names}
+            for future in as_completed(futures):
+                name=futures[future]
+                if cancelled.is_set():raise Cancelled()
+                try:
+                    entries,cursor=future.result()
+                    previous=states.get(name,{}).get('cursor')
+                    if cursor is not None and cursor==previous:raise RemoteError('제공처 커서가 반복됩니다.')
+                    with self.db.connect() as c:
+                        c.execute('BEGIN IMMEDIATE')
+                        position=c.execute('SELECT COALESCE(MAX(position),-1)+1 FROM search_hits WHERE session_id=?',(identity,)).fetchone()[0]
+                        for entry in entries:
+                            if cancelled.is_set():raise Cancelled()
+                            inserted=c.execute('INSERT OR IGNORE INTO search_hits VALUES(?,?,?)',(identity,entry,position)).rowcount
+                            if inserted:added+=1;position+=1
+                        states[name]=dict(state='ready' if cursor is not None else 'done',cursor=cursor,pages=states.get(name,{}).get('pages',0)+1)
+                    if on_update:on_update(identity)
+                except Cancelled:raise
+                except Exception as error:
+                    states[name]=dict(state='failed',cursor=None,error=str(error));errors.append(name+': '+str(error))
+                    if getattr(error,'blocked',False):disabled.add(name)
+        remaining=any(name not in disabled and states.get(name,{}).get('state','ready')=='ready' for name in self.providers)
+        if not remaining:index+=1;states={}
+        state='blocked' if len(disabled)==len(self.providers) else ('exhausted' if index>=len(variants) else 'ready')
+        stored=dict(providers=states,disabled=sorted(disabled))
+        with self.db.connect() as c:c.execute('UPDATE search_sessions SET variant=?,cursor=?,state=?,message=?,updated=? WHERE id=?',(index,json.dumps(stored),state,'; '.join(errors),time.time(),identity))
+        result=dict(added=added,state=state)
+        if errors:result['error']='; '.join(errors)
+        return result

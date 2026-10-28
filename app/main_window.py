@@ -24,6 +24,7 @@ from .page_discovery import clean_url
 
 class MainWindow(QMainWindow):
     import_progress = Signal(int)
+    search_results_ready = Signal(str)
     def __init__(self,db,settings):
         super().__init__()
         self.db,self.settings=db,settings
@@ -271,6 +272,7 @@ class MainWindow(QMainWindow):
         self.remote_timer=QTimer(self);self.remote_timer.setSingleShot(True);self.remote_timer.setInterval(650);self.remote_timer.timeout.connect(self.check_remote_refresh)
         from .search_service import SearchService
         self.internet_search=SearchService(self.online_service)
+        self.search_results_ready.connect(self.partial_search_results)
         self.online_runner=OnlineRunner(self.online_service,settings,self)
         self.gallery.verticalScrollBar().valueChanged.connect(lambda _:self.online_runner.defer())
         self.online_runner.library_changed.connect(self.online_changed)
@@ -458,6 +460,10 @@ class MainWindow(QMainWindow):
         current=self.gallery.currentIndex()
         if current.isValid() and self.model.row_at(current.row(),request=False):
             self.selection_changed(current)
+    def partial_search_results(self,session):
+        if session!=self.search_session:return
+        self.refresh_force=True;self.remote_changed()
+
     def start_internet_search(self):
         from dataclasses import replace
         try:
@@ -476,14 +482,14 @@ class MainWindow(QMainWindow):
         def done(result):
             self.search_flight=None
             if self.search_session!=session:return
-            self.reload(preserve=True);self.next_search.setEnabled(result['state']!='exhausted')
+            self.reload(preserve=True);self.next_search.setEnabled(result['state'] not in ('exhausted','blocked'))
             self.sync_label.setText('일부 출처 실패 · 다음 검색 가능' if result.get('error') else ('다음 결과 있음' if result['state']!='exhausted' else '검색 끝 · 다음 페이지 없음'))
         def failed(message):
             self.search_flight=None
             if self.search_session!=session:return
             self.sync_label.setText('검색 불가 · 확인 필요');self.next_search.setEnabled(True)
             self.empty.setText('온라인 검색을 완료하지 못했습니다\n\n'+message);self.statusBar().showMessage(message,20000)
-        self.search_flight=self.search_tasks.submit(lambda cancel:self.internet_search.page(session,cancel),done,failed,key='internet-search')
+        self.search_flight=self.search_tasks.submit(lambda cancel:self.internet_search.page(session,cancel,self.search_results_ready.emit),done,failed,key='internet-search')
 
     def search_changed(self):
         self.refresh_entities()

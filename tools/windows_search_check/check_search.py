@@ -18,7 +18,8 @@ def candidates(rows):
     for row in rows:
         for url in (row.get('currentSrc'),row.get('src')):
             if not safe_image(url or '') or url in seen:continue
-            seen.add(url);output.append(dict(url=url,width=row.get('width',0),height=row.get('height',0),alt=str(row.get('alt',''))[:300],status='browser-loaded candidate; not verified original or identity'))
+            seen.add(url);loaded=url==row.get('currentSrc')
+            output.append(dict(url=url,width=row.get('width',0) if loaded else None,height=row.get('height',0) if loaded else None,alt=str(row.get('alt',''))[:300],dimension_evidence='loaded_currentSrc_only' if loaded else 'src_declared_not_measured',status='display candidate; not verified original or identity'))
             if len(output)>=100:return output
     return output
 
@@ -82,7 +83,20 @@ def run():
             if body:
                 rules=RobotFileParser();rules.parse(body.splitlines())
                 if not rules.can_fetch('K-IDOL-ARCHIVE',page.url):raise RuntimeError('현재 검색 경로의 robots가 자동 접근을 허용하지 않습니다.')
-            report.update(page_url=page.url,page_title=page.title(),images=candidates(page.locator('img').evaluate_all('(images)=>images.slice(0,200).map(i=>({src:i.src,currentSrc:i.currentSrc,width:i.naturalWidth,height:i.naturalHeight,alt:i.alt}))')),state='diagnostic_completed')
+            from app.providers.kpopping_scroll import capture_batch
+            import threading
+            cursor=None;collected=[];empty_batches=0
+            print('같은 인물 필터를 유지하면서 추가 스크롤을 확인합니다. 최대 8배치/800후보로 제한합니다.')
+            for batch in range(8):
+                items,cursor,progress=capture_batch(page,query,cursor,threading.Event(),rounds=4)
+                collected.extend(dict(url=item.url,alt=item.title,width=None,height=None,dimension_evidence='not_measured_in_scroll_capture') for item in items)
+                report['events'].append(dict(batch=batch+1,new_candidates=len(items),total=len(collected)))
+                print('추가 검색 배치',batch+1,'누적 사진 후보',len(collected))
+                empty_batches=empty_batches+1 if not items else 0
+                if empty_batches>=2 or len(collected)>=800:break
+                page.evaluate('window.scrollTo(0, document.documentElement.scrollHeight)');page.wait_for_timeout(1000)
+            report.update(page_url=page.url,page_title=page.title(),images=collected[:800],state='diagnostic_completed',exhaustion_verified=False,capture_limit=800,capture_batches=len(report['events']),limit_reached=len(collected)>=800)
+
             report['image_count']=len(report['images'])
             print('이미지 후보',report['image_count'],'개. 이 수치는 인물 검색 정확도나 원본 확인 결과가 아닙니다.')
             return report,folder
