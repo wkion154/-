@@ -159,8 +159,13 @@ class WebService:
                 valid={row['id'] for row in conn.execute('SELECT id FROM persons WHERE id IN ('+','.join('?' for _ in confirmed_people)+')',confirmed_people)}
             if valid!=set(confirmed_people):raise ValueError('확인할 인물을 찾을 수 없습니다.')
         self.repo.require(item['source_id'],'original_download',resource)
-        if not item['cache_path'] or not Path(item['cache_path']).is_file():self.probe(identity,cancelled)
-        item=self.repo.image(identity)
+        if item['role']=='thumbnail':
+            from .provided_files import resolve
+            version=resolve(self,identity,cancelled)
+            item=item|dict(cache_path=version['path'],sha256=version['sha256'],url=version['source_url'])
+        else:
+            if not item['cache_path'] or not Path(item['cache_path']).is_file():self.probe(identity,cancelled)
+            item=self.repo.image(identity)
         self.repo.require(item['source_id'],'original_download',resource)
         cached=Path(item['cache_path'])
         if file_hash(cached)!=item['sha256']:raise RemoteError('검사 캐시가 변경되었습니다. 다시 확인하세요.')
@@ -177,6 +182,8 @@ class WebService:
             elif file_hash(destination)!=item['sha256']:raise RemoteError('기존 보관 파일을 덮어쓰지 않았습니다.')
         finally:temp.unlink(missing_ok=True)
         meta=inspect_image(destination)|dict(managed=1,name=item['title'] or Path(urlsplit(item['url']).path).name or '웹 이미지')
+        if cancelled.is_set():raise Cancelled()
+        self.repo.require(item['source_id'],'original_download',resource)
         asset,_=self.db.register(meta,origin=item['source_id'])
         self.repo.attach(item,asset)
         published=self.repo.page(item['page_id'])['published']
@@ -190,7 +197,9 @@ class WebService:
                 genders=[r[0] for r in conn.execute('SELECT p.gender FROM persons p JOIN image_person ip ON p.id=ip.person_id WHERE ip.image_id=?',(asset,))]
                 hidden=bool(genders and all(g=='male' for g in genders))
                 conn.execute('INSERT INTO asset_visibility VALUES(?,?,?) ON CONFLICT(asset_id) DO UPDATE SET hidden=excluded.hidden,reason=excluded.reason',(asset,int(hidden),'사용자가 확인한 등장 인물이 모두 남성 · 로컬 라이브러리에서 확인 가능' if hidden else ''))
-        return {'asset_id':asset,'sha256':item['sha256']}
+        result={'asset_id':asset,'sha256':item['sha256']}
+        if item['role']=='thumbnail':result['provided_file_only']=True
+        return result
 
     def analyze(self,identity,cancelled,after='',expected_sha=None):
         item=self.repo.image(identity)

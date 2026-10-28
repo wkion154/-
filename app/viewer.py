@@ -243,7 +243,8 @@ class Viewer(QDialog):
             status = '빠른 미리보기 · 원본 픽셀에서 전체 해상도' if limited else '전체 해상도'
             if row.get('kind','asset')!='asset':status+=' · 보기 캐시 · 제공된 파일 기준'
             if row.get('preview_only'):status='제공된 미리보기 · 원본 해상도 미확인'
-            self.buttons['원본 픽셀'].setText('미리보기 픽셀' if row.get('preview_only') else '원본 픽셀')
+            elif row.get('provided_file_only'):status='사이트 제공 파일 · 크기 실측 · 최대 원본 여부 미확인'
+            self.buttons['원본 픽셀'].setText('미리보기 픽셀' if row.get('preview_only') else ('파일 픽셀' if row.get('provided_file_only') else '원본 픽셀'))
             self.info.setText(f"{row['width']:,} × {row['height']:,}  ·  {row['format']}  ·  {status}\n{row['path']}")
             self.prefetch_timer.start(120)
             self.image_ready.emit(row['id'])

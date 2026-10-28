@@ -11,6 +11,22 @@ def _public_source(value,host,path=None):
     except (TypeError,ValueError):return False
 
 
+def provided_file_url(preview_url):
+    """Read the exact CDN address supplied in an observed image wrapper.
+
+    This is a provided file candidate, not proof of maximum/original quality.
+    No size parameter, filename or extension is changed or synthesized.
+    """
+    if not isinstance(preview_url,str) or len(preview_url)>8192:return None
+    if not _public_source(preview_url,'kpopping.com','/api/kpics-image'):return None
+    values=parse_qs(urlsplit(preview_url).query).get('url',[])
+    if len(values)!=1:return None
+    candidate=values[0]
+    if not _public_source(candidate,'cdn.kpopping.com') or not urlsplit(candidate).path.startswith('/kpics/'):return None
+    if any(ord(ch)<32 for ch in candidate):return None
+    return candidate
+
+
 def parse_observation(report):
     page_url=report.get('page_url','')
     if not _public_source(page_url,'kpopping.com','/kpics'):raise ValueError('관측된 Kpopping kpics 검색 페이지가 필요합니다.')

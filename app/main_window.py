@@ -227,7 +227,7 @@ class MainWindow(QMainWindow):
         self.upscale_button=self.button('AI 업스케일 · 비교',self.open_upscale);info.addWidget(self.upscale_button)
         self.relink_button=self.button('원본 다시 연결',self.relink)
         info.addWidget(self.relink_button)
-        self.preserve_button=self.button('원본 영구 보관',self.preserve_selected)
+        self.preserve_button=self.button('파일 영구 보관',self.preserve_selected)
         self.source_button=self.button('출처 페이지 열기',self.open_selected_source)
         info.addWidget(self.preserve_button);info.addWidget(self.source_button)
         self.preserve_button.setEnabled(False);self.source_button.setEnabled(False)
@@ -644,7 +644,7 @@ class MainWindow(QMainWindow):
                 if not self.selected or self.selected['id']!=row['id']:return
                 entry,people,groups=result
                 measured=f"캐시 실측 {entry['width']:,} × {entry['height']:,}" if entry['width'] and entry['height'] else f"미실측 · 제공처 선언 {entry['provided_width'] or '?'} × {entry['provided_height'] or '?'}"
-                self.info_text.setText('온라인 후보 · 영구 보관 전\n'+measured+'\n\n등장 확인: '+(', '.join(p['name'] for p in people) or '미확인')+'\n그룹 연결: '+(', '.join(g['name'] for g in groups) or '미연결')+'\n\n'+entry['page_url']+'\n'+entry['image_url']+'\n\n원본 열기는 보기 캐시를 사용합니다. 영구 보관은 별도로 요청하세요. 출처·사진별 권한이 필요합니다.')
+                self.info_text.setText('온라인 후보 · 영구 보관 전\n'+measured+'\n\n등장 확인: '+(', '.join(p['name'] for p in people) or '미확인')+'\n그룹 연결: '+(', '.join(g['name'] for g in groups) or '미연결')+'\n\n'+entry['page_url']+'\n'+entry['image_url']+'\n\n보기 캐시와 영구 보관은 별개입니다. 제공 파일 주소와 출처·사진별 다운로드 권한을 확인한 뒤 파일을 보관합니다. 미리보기만 있으면 원본으로 보관하지 않습니다.')
             self.meta_tasks.submit(lambda _:self.library.details(row['id']),done,self.error,key='remote-details')
             return
         people,groups=self.db.associations(row['id'])
@@ -709,7 +709,7 @@ class MainWindow(QMainWindow):
         menu.addAction('뷰어에서 열기',lambda:self.open_viewer(index))
         menu.addAction('이 사진과 연관된 사진 찾기',self.open_related).setEnabled(not remote(self.selected))
         if remote(self.selected):
-            menu.addAction('원본 영구 보관',self.preserve_selected)
+            menu.addAction('파일 영구 보관',self.preserve_selected)
             menu.addAction('출처 페이지 열기',self.open_selected_source)
         menu.addAction('즐겨찾기 전환',self.toggle_favorite)
         menu.addAction('그룹 · 인물 연결',self.associate)
@@ -730,7 +730,7 @@ class MainWindow(QMainWindow):
         row=dict(self.selected);self.preserve_button.setEnabled(False)
         def done(identity):
             self.online_runner.request(identity)
-            self.statusBar().showMessage('원본 보관을 요청했습니다. 진행 상황은 온라인 → 작업 상태에서 확인하세요.',8000)
+            self.statusBar().showMessage('파일 보관을 요청했습니다. 진행 상황과 제공 파일 구분은 온라인 → 작업 상태에서 확인하세요.',8000)
             self.preserve_button.setEnabled(bool(self.selected and remote(self.selected)))
         self.meta_tasks.submit(lambda _:self.library_service.preserve(row),done,self.error)
 

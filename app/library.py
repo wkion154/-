@@ -23,7 +23,7 @@ NEEDS_REVIEW="(EXISTS(SELECT 1 FROM asset_sources o WHERE o.asset_id=e.id AND o.
 def asset_permission(operation):
     web=permission_sql('w.source_id',"'web:'||w.id",operation)
     commons=permission_sql("'wikimedia'","'commons:'||c.id",operation)
-    return f"(NOT {NEEDS_REVIEW} OR EXISTS(SELECT 1 FROM web_images w WHERE w.local_asset_id=e.id AND w.sha256=e.sha256 AND {web}) OR EXISTS(SELECT 1 FROM remote_images c WHERE c.local_asset_id=e.id AND c.license_status='eligible' AND {REVIEW} AND {commons}))"
+    return f"(NOT {NEEDS_REVIEW} OR EXISTS(SELECT 1 FROM web_images w WHERE w.local_asset_id=e.id AND (w.sha256=e.sha256 OR EXISTS(SELECT 1 FROM web_revisions v WHERE v.item_id=w.id AND v.asset_id=e.id AND v.sha256=e.sha256)) AND {web}) OR EXISTS(SELECT 1 FROM remote_images c WHERE c.local_asset_id=e.id AND c.license_status='eligible' AND {REVIEW} AND {commons}))"
 
 
 def person_links(entry='e.id'):
@@ -189,10 +189,18 @@ class LibraryService:
         if current['kind']=='asset':
             if not self._asset_allowed(current,'original_download'):raise RemoteError('저장된 사진의 원본 보기 권한을 확인하세요.',blocked=True)
             if not Path(current['path']).is_file():raise RemoteError('원본 경로를 확인하거나 다시 연결하세요.')
-            return current
+            provided=None
+            if current.get('requires_review'):
+                with self.db.connect() as c:
+                    provided=c.execute("SELECT 1 FROM web_revisions WHERE asset_id=? AND sha256=? AND json_extract(evidence,'$.kind')='provided_file'",(current['id'],current['sha256'])).fetchone()
+            return current|dict(provided_file_only=True) if provided else current
         if current['kind']=='web':
             item=self.online.web.repo.image(current['ref_id'])
             if item['role']=='thumbnail':
+                from .provided_files import source_url,resolve
+                if source_url(item) and self.online.web.repo.allowed(item['source_id'],'original_download',current['id']):
+                    version=resolve(self.online.web,item['id'],cancelled)
+                    return current|{k:version[k] for k in ('path','sha256','width','height','size','format','provided_file_only')}
                 self.online.web.preview(item['id'],cancelled)
                 item=self.online.web.repo.image(item['id']);self.online.web.repo.require(item['source_id'],'thumbnail',current['id'])
                 return current|dict(path=item['cache_path'],sha256=item['sha256'],width=item['width'],height=item['height'],size=item['size'],format=item['mime'],managed=0,preview_only=True)

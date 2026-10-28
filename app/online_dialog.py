@@ -14,7 +14,9 @@ def job_summary(job):
     if job['message']:return job['message']
     try:result=json.loads(job['result'] or '{}')
     except ValueError:return ''
-    if 'asset_id' in result:return '원본 보관 완료 · 기존 파일 재사용' if result.get('reused') else '원본 보관 완료'
+    if 'asset_id' in result:
+        if result.get('provided_file_only'):return '사이트 제공 파일 보관 완료 · 최대 원본 여부 미확인'
+        return '원본 보관 완료 · 기존 파일 재사용' if result.get('reused') else '원본 보관 완료'
     if 'candidates' in result:return f"신규 후보 {result['candidates']}건 확인"
     if 'indexed' in result:return f"사진 {result['indexed']}건 목록 갱신"
     if 'registered' in result:return f"정보 {result.get('updated',0)}건 · 자동 등록 {result['registered']}건"
