@@ -115,7 +115,7 @@ class Database:
                 db.execute('INSERT OR IGNORE INTO image_group VALUES(?,?)', (identity, group))
             return identity, duplicate
 
-    def query(self, scope=None, search='', sort='newest', offset=0, limit=256):
+    def _selection(self, scope, search, sort):
         where, args = [], []
         if scope:
             kind, value = scope
@@ -137,10 +137,21 @@ class Database:
             args += [term] * 7
         orders = {'newest': 'a.registered DESC,a.id', 'oldest': 'a.registered,a.id', 'name': 'a.name COLLATE NOCASE,a.id', 'resolution': '(a.width*a.height) DESC,a.id'}
         clause = ' WHERE ' + ' AND '.join(where) if where else ''
+        return clause, args, orders.get(sort,orders['newest'])
+
+    def query(self, scope=None, search='', sort='newest', offset=0, limit=256, count=True):
+        clause,args,order = self._selection(scope,search,sort)
         with self.connect() as db:
-            total = db.execute('SELECT COUNT(*) FROM assets a'+clause, args).fetchone()[0]
-            rows = [dict(r) for r in db.execute('SELECT a.* FROM assets a'+clause+' ORDER BY '+orders.get(sort, orders['newest'])+' LIMIT ? OFFSET ?', (*args, limit, offset))]
+            total = db.execute('SELECT COUNT(*) FROM assets a'+clause, args).fetchone()[0] if count else None
+            rows = [dict(r) for r in db.execute('SELECT a.* FROM assets a'+clause+' ORDER BY '+order+' LIMIT ? OFFSET ?', (*args, limit, offset))]
             return rows, total
+
+    def locate(self, identity, scope=None, search='', sort='newest'):
+        """Find the ordered position of a stable ID without transferring all rows."""
+        clause,args,order = self._selection(scope,search,sort)
+        with self.connect() as db:
+            row = db.execute('SELECT position FROM (SELECT a.id,ROW_NUMBER() OVER (ORDER BY '+order+')-1 AS position FROM assets a'+clause+') WHERE id=?',(*args,identity)).fetchone()
+            return row['position'] if row else None
 
     def favorite(self, identity, value):
         with self.connect() as db:

@@ -1,0 +1,133 @@
+{
+  "scope": "Linux isolated decoder processes, synthetic 7680x4320 JPEG and PNG. Three decodes per case. Native RSS includes runtime; no Windows or display-FPS claims.",
+  "cases": [
+    {
+      "format": "jpg",
+      "method": "legacy",
+      "edge": 4096,
+      "dimensions": [
+        4096,
+        2304
+      ],
+      "median_ms": 700.26,
+      "samples_ms": [
+        874.95,
+        676.55,
+        700.26
+      ],
+      "peak_process_rss_mib": 401.07
+    },
+    {
+      "format": "jpg",
+      "method": "native",
+      "edge": 4096,
+      "dimensions": [
+        4096,
+        2304
+      ],
+      "median_ms": 132.47,
+      "samples_ms": [
+        137.15,
+        132.47,
+        131.84
+      ],
+      "peak_process_rss_mib": 142.66
+    },
+    {
+      "format": "jpg",
+      "method": "legacy",
+      "edge": 7680,
+      "dimensions": [
+        7680,
+        4320
+      ],
+      "median_ms": 294.06,
+      "samples_ms": [
+        373.15,
+        276.36,
+        294.06
+      ],
+      "peak_process_rss_mib": 550.27
+    },
+    {
+      "format": "jpg",
+      "method": "native",
+      "edge": 7680,
+      "dimensions": [
+        7680,
+        4320
+      ],
+      "median_ms": 169.01,
+      "samples_ms": [
+        169.01,
+        164.71,
+        180.34
+      ],
+      "peak_process_rss_mib": 169.3
+    },
+    {
+      "format": "png",
+      "method": "legacy",
+      "edge": 4096,
+      "dimensions": [
+        4096,
+        2304
+      ],
+      "median_ms": 914.38,
+      "samples_ms": [
+        966.74,
+        914.38,
+        904.19
+      ],
+      "peak_process_rss_mib": 400.31
+    },
+    {
+      "format": "png",
+      "method": "native",
+      "edge": 4096,
+      "dimensions": [
+        4096,
+        2304
+      ],
+      "median_ms": 379.4,
+      "samples_ms": [
+        379.4,
+        379.02,
+        390.23
+      ],
+      "peak_process_rss_mib": 210.24
+    },
+    {
+      "format": "png",
+      "method": "legacy",
+      "edge": 7680,
+      "dimensions": [
+        7680,
+        4320
+      ],
+      "median_ms": 520.75,
+      "samples_ms": [
+        564.96,
+        520.75,
+        471.55
+      ],
+      "peak_process_rss_mib": 549.7
+    },
+    {
+      "format": "png",
+      "method": "native",
+      "edge": 7680,
+      "dimensions": [
+        7680,
+        4320
+      ],
+      "median_ms": 359.65,
+      "samples_ms": [
+        375.0,
+        359.65,
+        346.44
+      ],
+      "peak_process_rss_mib": 173.93
+    }
+  ]
+}

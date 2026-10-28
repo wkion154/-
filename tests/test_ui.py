@@ -60,8 +60,8 @@ def test_viewer_navigation_zoom_fullscreen_escape(qtbot,db,settings,photo,tmp_pa
     original=viewer.canvas.transform().m11()
     viewer.canvas.zoom(1.2)
     assert viewer.canvas.transform().m11()>original
-    viewer.actual()
-    qtbot.waitUntil(lambda:viewer.canvas.item is not None)
+    with qtbot.waitSignal(viewer.image_ready,timeout=5000):
+        viewer.actual()
     assert abs(viewer.canvas.transform().m11()*viewer.canvas.devicePixelRatioF()-1)<.001
     viewer.step(1)
     qtbot.waitUntil(lambda:viewer.canvas.item is not None)
@@ -102,11 +102,15 @@ def test_gallery_incremental_rows_and_bounded_thumbnails(qtbot,db,settings,photo
     for i in range(1000):db.register(meta|dict(sha256=f'{i:064x}',name=f'{i}.png'))
     w=window(qtbot,db,settings)
     qtbot.waitUntil(lambda:w.model.total==1000)
-    assert w.model.rowCount()<=512
+    assert w.model.rowCount()==1000
+    assert len(w.model.rows)<=512
     assert len(w.gallery.pending)<=8
     assert len(w.gallery.thumbs)<=96
-    w.gallery.verticalScrollBar().setValue(w.gallery.verticalScrollBar().maximum())
-    qtbot.waitUntil(lambda:w.model.rowCount()>256)
+    last=w.model.index(999)
+    qtbot.waitUntil(lambda:w.gallery.visualRect(last).isValid())
+    w.gallery.scrollTo(last)
+    qtbot.waitUntil(lambda:w.model.row_at(999,request=False) is not None)
+    assert len(w.model.rows)<=w.model.MAX_PAGES*w.model.PAGE_SIZE
     w.close()
 
 

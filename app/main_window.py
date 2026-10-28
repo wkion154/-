@@ -1,7 +1,7 @@
 import logging
 import threading
 from pathlib import Path
-from PySide6.QtCore import Qt,QTimer,QByteArray,Signal
+from PySide6.QtCore import Qt,QTimer,QByteArray,Signal,QPoint
 from PySide6.QtGui import QShortcut,QKeySequence,QGuiApplication
 from PySide6.QtWidgets import (QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,QLineEdit,QComboBox,QFrame,QSplitter,QTreeWidget,QTreeWidgetItem,QSlider,QFileDialog,QMessageBox,QDialog,QMenu,QScrollArea)
 from .gallery import GalleryModel,GalleryView
@@ -15,13 +15,14 @@ class MainWindow(QMainWindow):
     def __init__(self,db,settings):
         super().__init__()
         self.db,self.settings=db,settings
-        self.setWindowTitle('K-IDOL ARCHIVE · Alpha 1')
+        self.setWindowTitle('K-IDOL ARCHIVE · Alpha 2')
         self.resize(1440,920)
         self.setMinimumSize(820,560)
         self.scope=None
         self.section='all'
         self.selected=None
         self.import_job=None
+        self.bookmark=None
         self.tasks=Tasks(self,1)
         self.meta_tasks=Tasks(self,1)
         self.central=QWidget()
@@ -79,7 +80,7 @@ class MainWindow(QMainWindow):
         self.tree.customContextMenuRequested.connect(self.entity_menu)
         side.addWidget(self.tree,1)
         side.addWidget(self.button('멤버 연결 관리',self.memberships))
-        label=QLabel('ALPHA 1\n로컬 우선 · 원본 보존')
+        label=QLabel('ALPHA 2\n로컬 우선 · 원본 보존')
         label.setObjectName('muted')
         side.addWidget(label)
         self.splitter.addWidget(self.sidebar)
@@ -119,6 +120,9 @@ class MainWindow(QMainWindow):
         self.sort=QComboBox()
         for label,value in [('최신 등록순','newest'),('오래된 등록순','oldest'),('파일명순','name'),('해상도순','resolution')]:self.sort.addItem(label,value)
         self.sort.setCurrentIndex(self.sort.findData(settings.values['sort']))
+        refresh=self.button('↻',lambda:self.reload(preserve=True))
+        refresh.setToolTip('라이브러리 새로고침')
+        tools.addWidget(refresh)
         tools.addWidget(self.sort)
         self.slider=QSlider(Qt.Orientation.Horizontal)
         self.slider.setRange(128,384)
@@ -137,9 +141,6 @@ class MainWindow(QMainWindow):
         self.empty.setMinimumHeight(160)
         content.addWidget(self.empty,1)
         self.empty.hide()
-        self.more=self.button('사진 더 불러오기',lambda:self.model.fetchMore())
-        content.addWidget(self.more)
-        self.more.hide()
         self.splitter.addWidget(center)
         self.info_panel=QWidget()
         self.info_panel.setMinimumWidth(210)
@@ -275,17 +276,38 @@ class MainWindow(QMainWindow):
         self.heading.setText(p['name'])
         self.subtitle.setText('직접 연결한 인물 사진')
         self.reload()
-    def reload(self):
+    def reload(self,preserve=False):
+        self.bookmark=None
+        if preserve:
+            index=self.gallery.indexAt(QPoint(12,12))
+            row=self.model.row_at(index.row(),request=False) if index.isValid() else None
+            if row:
+                self.bookmark=(row['id'],self.gallery.visualRect(index).top(),self.selected['id'] if self.selected else None)
         self.selected=None
         self.info_name.setText('사진을 선택하세요')
         for b in (self.fav_button,self.associate_button,self.relink_button):b.setEnabled(False)
         self.model.reload(self.scope,self.search.text(),self.sort.currentData())
     def loaded(self,total):
-        self.count.setText(f'{total:,} PHOTOS  ·  {len(self.model.rows):,} loaded')
+        if self.bookmark is not None and not self.model.loading:
+            identity,y_offset,selected_id=self.bookmark
+            self.bookmark=None
+            generation=self.model.generation
+            scope,search,sort=self.model.scope,self.model.search,self.model.sort
+            def locate(_):
+                return (self.db.locate(identity,scope,search,sort),self.db.locate(selected_id,scope,search,sort) if selected_id else None)
+            def restore(result):
+                if self.model.generation!=generation:return
+                position,selected=result
+                if position is not None:
+                    self.gallery.restore_anchor(position,y_offset,selected)
+            self.meta_tasks.submit(locate,restore,self.error)
+        self.count.setText(f'{total:,} PHOTOS')
         self.empty.setVisible(total==0)
         self.gallery.setVisible(total>0)
-        self.more.setVisible(len(self.model.rows)<total)
         self.gallery.schedule()
+        current=self.gallery.currentIndex()
+        if current.isValid() and self.model.row_at(current.row(),request=False):
+            self.selection_changed(current)
     def search_changed(self):
         self.refresh_entities()
         self.reload()
@@ -347,7 +369,7 @@ class MainWindow(QMainWindow):
             self.import_job=None
             self.import_button.setEnabled(True)
             self.cancel_button.hide()
-            self.reload()
+            self.reload(preserve=True)
             message=f"추가 {report['added']:,} · 중복 {report['duplicates']:,} · 실패 {len(report['failed']):,}"+(' · 중단됨' if report['cancelled'] else '')
             self.statusBar().showMessage(message,30000)
             if report['failed']:
@@ -368,6 +390,7 @@ class MainWindow(QMainWindow):
     def selection_changed(self,index,previous=None):
         if not index.isValid():return
         row=index.data(Qt.ItemDataRole.UserRole)
+        if row is None:return
         self.selected=row
         self.info_name.setText(row['name'])
         self.fav_button.setText('★ 즐겨찾기 해제' if row['favorite'] else '☆ 즐겨찾기')
@@ -421,10 +444,12 @@ class MainWindow(QMainWindow):
         menu.addAction('원본 다시 연결',self.relink)
         menu.exec(self.gallery.viewport().mapToGlobal(pos))
     def open_viewer(self,index):
-        if not index.isValid():return
+        if not index.isValid() or self.model.row_at(index.row()) is None:return
         scroll=self.gallery.verticalScrollBar().value()
         scope,search,sort=self.model.scope,self.model.search,self.model.sort
-        viewer=Viewer([dict(r) for r in self.model.rows],index.row(),self,self.settings.values['viewer_mode'],lambda offset:self.db.query(scope,search,sort,offset),self.model.total)
+        base=(index.row()//self.model.PAGE_SIZE)*self.model.PAGE_SIZE
+        seed=[dict(r) for r in self.model.pages[base//self.model.PAGE_SIZE]]
+        viewer=Viewer(seed,index.row()-base,self,self.settings.values['viewer_mode'],lambda offset:self.db.query(scope,search,sort,offset),self.model.total,base_index=base)
         def favorite(identity,value):
             self.persist_favorite(identity,value)
         viewer.favorite_changed.connect(favorite)
@@ -448,7 +473,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage('현재 파일 작업을 마친 뒤 종료합니다.')
         self.search_timer.stop()
         self.gallery.close_tasks()
-        self.model.tasks.stop()
+        self.model.close_tasks()
         self.tasks.stop()
         self.meta_tasks.stop()
         self.settings.values.update(geometry=bytes(self.saveGeometry().toBase64()).decode(),panels=self.splitter.sizes(),sidebar=self.sidebar_enabled,info=self.info_enabled,thumbnail_size=self.slider.value(),sort=self.sort.currentData())

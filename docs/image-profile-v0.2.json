@@ -1,0 +1,16 @@
+{
+  "scope": "Linux offscreen Qt, 100 synthetic 2400x3600 JPEGs. Timer gaps are event-loop responsiveness observations, not physical display frame times.",
+  "import": {
+    "added": 100,
+    "duplicates": 0,
+    "failed": [],
+    "cancelled": false
+  },
+  "import_total_ms": 3068.02,
+  "first_thumbnail_ms": 38.54,
+  "event_loop_max_gap_ms": 19.28,
+  "event_loop_p95_gap_ms": 10.96,
+  "peak_process_rss_mib": 164.87,
+  "thumbnail_memory_count": 18,
+  "queued_thumbnails": 0
+}

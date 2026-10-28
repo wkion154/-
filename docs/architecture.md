@@ -1,3 +1,17 @@
+# Alpha 2 architecture update
+
+The existing isolated checkout is `/workspace/K-IDOL-ARCHIVE`. Do not create worktrees unless explicitly requested. No dependency, data-directory or persistent schema change was required for v0.2.0; the v1 library, IDs, associations and favorites remain compatible.
+
+- `GalleryModel` reports all result positions but holds only eight 256-row metadata pages. Missing positions request bounded asynchronous pages; failed pages wait for refresh. The view owns no widget per image. Qt still maintains internal geometry per position, so total process memory is not independent of result size.
+- Thumbnail scheduling is throttled rather than trailing-debounced, cancels obsolete visible-range jobs and decodes cache files off the GUI thread. Job tokens prevent stale completion from removing newer requests.
+- `ImageCache` enforces a 128MiB byte budget and 12-entry cap. Default 4096px neighboring previews are prefetched separately from foreground work. Oversized prefetch candidates are skipped. Current displayed images and decoder buffers are outside the cache budget.
+- The viewer uses owned native QImages and a custom graphics item that draws the exposed source rectangle, avoiding a second full-resolution QPixmap conversion. This is **viewport-limited painting, not file-region decoding**. Qt may fully decode PNG internally. Active native decodes cannot be interrupted; queued jobs can be cancelled.
+- Viewer metadata is a sliding window of at most 768 records with forward/backward query pagination. Source-pixel zoom accounts for preview scale and device pixel ratio.
+- Refresh bookmarks resolve stable asset IDs with a background SQL window query, restoring selection and vertical anchor even when newly registered images change positions. In a uniform grid an inserted image may naturally change columns.
+- Provider/AI contracts remain inactive. Live viewer pagination uses the current DB, not a persistent transactional snapshot; simultaneous edits affecting a filter/order can change later page membership.
+
+The following Alpha 1 notes are retained as historical context; their unbounded-metadata and pixmap notes are superseded above.
+
 # Alpha 1 architecture
 
 The official stage-one codebase is a new isolated project at `/workspace/K-IDOL-ARCHIVE`. The pre-existing game release repository is unchanged. No Git worktrees were created. Future cloud tasks should use this existing checkout rather than create worktrees unless explicitly requested.

@@ -1,6 +1,9 @@
 import argparse,hashlib,zipfile
 from pathlib import Path
 root=Path(__file__).resolve().parents[1]
+import sys
+sys.path.insert(0,str(root))
+from app import __version__
 parser=argparse.ArgumentParser()
 parser.add_argument('--windows',action='store_true')
 args=parser.parse_args()
@@ -8,11 +11,11 @@ output=root/'dist';output.mkdir(exist_ok=True)
 if args.windows:
     source=output/'K-IDOL-ARCHIVE'
     if not (source/'K-IDOL-ARCHIVE.exe').is_file():raise SystemExit('Windows executable not found; build on Windows first.')
-    destination=output/'K-IDOL-ARCHIVE_v0.1.0_Windows.zip'
+    destination=output/f'K-IDOL-ARCHIVE_v{__version__}_Windows.zip'
     files=[p for p in source.rglob('*') if p.is_file()]
 else:
     source=root
-    destination=output/'K-IDOL-ARCHIVE_v0.1.0_Source.zip'
+    destination=output/f'K-IDOL-ARCHIVE_v{__version__}_Source.zip'
     excluded={'.venv','.git','dist','build','__pycache__','.pytest_cache'}
     files=[p for p in source.rglob('*') if p.is_file() and not excluded.intersection(p.relative_to(source).parts)]
 with zipfile.ZipFile(destination,'w',zipfile.ZIP_DEFLATED) as archive:

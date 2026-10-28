@@ -6,7 +6,8 @@ import shutil
 import time
 import uuid
 from PIL import Image, ImageOps
-from PySide6.QtGui import QImage
+from PySide6.QtGui import QImage, QImageReader
+from PySide6.QtCore import QSize, Qt
 
 EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tif', '.tiff'}
 MAX_PIXELS = 100_000_000
@@ -128,13 +129,25 @@ def import_paths(db, paths, cache, storage, managed, person, group, cancelled, p
     return report
 
 
+# 100 MP RGBA is about 382 MiB. This is a decoder allocation guard, not a promise
+# that the complete viewer process fits in 512 MiB (scene pixmaps use memory too).
+QImageReader.setAllocationLimit(512)
+
+
 def decode_preview(path, edge=4096):
-    with Image.open(path) as image:
-        if image.width * image.height > MAX_PIXELS:
-            raise ValueError('디코딩 한도를 초과하는 이미지입니다.')
-        image.draft('RGB', (edge, edge))
-        image = ImageOps.exif_transpose(image)
-        image.thumbnail((edge, edge), Image.Resampling.LANCZOS)
-        image = image.convert('RGBA')
-        data = image.tobytes('raw', 'RGBA')
-        return QImage(data, image.width, image.height, image.width*4, QImage.Format.Format_RGBA8888).copy()
+    """Decode directly to an owned QImage, allowing native JPEG downsampling.
+
+    Avoids PIL -> RGBA -> bytes -> QImage copies for the interactive viewer.
+    Other formats may still need their full source buffer inside Qt's decoder.
+    """
+    reader = QImageReader(str(path))
+    reader.setAutoTransform(True)
+    size = reader.size()
+    if not size.isValid() or size.width()*size.height()>MAX_PIXELS:
+        raise ValueError('이미지 형식 또는 크기를 확인하세요. 최대 1억 픽셀입니다.')
+    if max(size.width(),size.height())>edge:
+        reader.setScaledSize(size.scaled(QSize(edge,edge),Qt.AspectRatioMode.KeepAspectRatio))
+    image = reader.read()
+    if image.isNull():
+        raise ValueError(reader.errorString())
+    return image

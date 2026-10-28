@@ -10,6 +10,7 @@ from app.core import Settings
 from app.images import inspect_image
 from app.main_window import MainWindow
 from app.theme import STYLE
+from app.viewer import Viewer
 
 app=QApplication([])
 app.setStyle('Fusion')
@@ -45,5 +46,15 @@ with tempfile.TemporaryDirectory() as folder:
     w.resize(900,1200)
     for _ in range(20):app.processEvents()
     w.grab().save('docs/portrait-ui.png')
+    rows,total=db.query()
+    viewer=Viewer(rows,0,total=total)
+    viewer.show()
+    deadline=time.monotonic()+5
+    while time.monotonic()<deadline:
+        app.processEvents()
+        if viewer.canvas.item is not None:break
+        time.sleep(.01)
+    viewer.grab().save('docs/viewer-ui-v0.2.png')
+    viewer.close()
     w.close()
 print('UI captures saved; all artwork is synthetic.')
