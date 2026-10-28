@@ -38,7 +38,7 @@ class MainWindow(QMainWindow):
         except (ValueError,TypeError):self.analysis_filter=AnalysisFilter()
         if settings.values.get('sort')=='color_share' and not self.analysis_filter.color:settings.values['sort']='newest'
         self.analysis_dialog=None
-        self.search_session=None;self.search_flight=None
+        self.search_session=None;self.search_flight=None;self.search_auto_ready=False
         self.search_tasks=Tasks(self,1)
         from .upscale_service import UpscaleService
         self.upscale_service=UpscaleService(db,settings);self.upscale_service.recover();self.upscale_dialogs=[]
@@ -69,7 +69,7 @@ class MainWindow(QMainWindow):
         self.search.setClearButtonEnabled(True)
         top.addWidget(self.search,1)
         self.web_search_button=self.button('인터넷 검색',self.start_internet_search);top.addWidget(self.web_search_button)
-        top.addWidget(self.button('브라우저 연결',self.configure_browser_search))
+        top.addWidget(self.button('검색 출처',self.configure_browser_search))
         self.search.returnPressed.connect(self.start_internet_search)
         self.search_composition=QComboBox()
         for label,value in [('전체 구도',None),('얼굴','face_close'),('얼굴·어깨','face_shoulders'),('상반신','upper_body'),('허리 위','waist_up'),('무릎 위','knees_up'),('전신','full_body')]:self.search_composition.addItem(label,value)
@@ -85,7 +85,8 @@ class MainWindow(QMainWindow):
         top.addWidget(self.button('설정',self.open_settings))
         outer.addWidget(toolbar)
         search_controls=QWidget();search_row=QHBoxLayout(search_controls);search_row.setContentsMargins(20,4,20,4)
-        for widget in (self.search_composition,self.search_unknown,self.next_search):
+        self.search_auto=QCheckBox('스크롤 시 더 검색');self.search_auto.setChecked(True)
+        for widget in (self.search_composition,self.search_unknown,self.next_search,self.search_auto):
             top.removeWidget(widget);search_row.addWidget(widget)
         search_row.addStretch();outer.addWidget(search_controls)
         self.splitter=QSplitter()
@@ -159,7 +160,7 @@ class MainWindow(QMainWindow):
         self.count.setObjectName('muted')
         tools.addWidget(self.count,1)
         self.sort=QComboBox()
-        for label,value in [('최신 등록순','newest'),('오래된 등록순','oldest'),('파일명순','name'),('해상도순','resolution'),('색상 점유율순','color_share')]:self.sort.addItem(label,value)
+        for label,value in [('최신 등록순','newest'),('검색 발견순','discovery'),('오래된 등록순','oldest'),('파일명순','name'),('해상도순','resolution'),('색상 점유율순','color_share')]:self.sort.addItem(label,value)
         self.sort.setCurrentIndex(self.sort.findData(settings.values['sort']))
         refresh=self.button('↻',lambda:self.reload(preserve=True))
         refresh.setToolTip('라이브러리 새로고침')
@@ -274,6 +275,11 @@ class MainWindow(QMainWindow):
         from .search_service import SearchService
         self.internet_search=SearchService(self.online_service)
         self.search_results_ready.connect(self.partial_search_results)
+        self.search_scroll_timer=QTimer(self);self.search_scroll_timer.setSingleShot(True);self.search_scroll_timer.setInterval(120)
+        self.search_scroll_timer.timeout.connect(self.search_near_bottom)
+        self.gallery.more_requested.connect(lambda:self.search_scroll_timer.start())
+        self.gallery.verticalScrollBar().sliderMoved.connect(lambda _:self.search_scroll_timer.start())
+        self.gallery.verticalScrollBar().actionTriggered.connect(lambda _:self.search_scroll_timer.start())
         self.online_runner=OnlineRunner(self.online_service,settings,self)
         self.gallery.verticalScrollBar().valueChanged.connect(lambda _:self.online_runner.defer())
         self.online_runner.library_changed.connect(self.online_changed)
@@ -436,6 +442,7 @@ class MainWindow(QMainWindow):
         self.preserve_button.setEnabled(False);self.source_button.setEnabled(False)
         if self.analysis_dialog is not None and self.analysis_dialog.isVisible():self.analysis_dialog.set_entry(None)
         self.empty.setText('조건에 맞는 사진이 없습니다\n\n색상/구도 분석 완료와 권한을 확인하거나 미분석 포함·필터 초기화를 사용하세요.' if self.analysis_filter.active else '아직 사진이 없습니다\n\n사진을 가져오거나 그룹과 인물을 먼저 등록해 보세요.')
+        if self.scope and self.scope[0]=='search':self.empty.setText('아직 표시할 검색 후보가 없습니다\n\n검색 진행·출처 상태를 확인하세요. 다른 이름·별칭이나 미확정 포함 조건으로 검색할 수 있습니다.')
         self.model.db=LibraryRepository(self.db,self.library_mode.currentData(),self.analysis_filter)
         self.model.reload(self.scope,'' if self.scope and self.scope[0]=='search' else self.search.text(),self.sort.currentData(),source_filter=self.selected_source_filter())
     def loaded(self,total):
@@ -464,18 +471,33 @@ class MainWindow(QMainWindow):
     def configure_browser_search(self):
         from PySide6.QtWidgets import QFormLayout,QDialogButtonBox
         from .providers.kpopping_browser import KpoppingBrowserProvider
-        dialog=QDialog(self);dialog.setWindowTitle('Windows 브라우저 검색 · 실험');form=QFormLayout(dialog)
-        note=QLabel('Kpopping 공개 검색·미리보기 전용입니다. Windows Edge/Chrome과 선택 브라우저 패키지가 필요합니다.\n장원영 목록 경로는 사용자 관측으로 확인됐습니다. 다른 이름의 자동 선택은 아직 미검증입니다.\n이 연결은 원본 다운로드·분석·AI 권한을 부여하지 않습니다.');note.setWordWrap(True);form.addRow(note)
-        consent=QCheckBox('이 출처의 검색·미리보기 이용 조건을 확인했고 해당 범위의 사용을 허용합니다.');form.addRow(consent)
-        reference=QLineEdit();reference.setPlaceholderText('확인한 이용 조건 URL 또는 문서 식별자');form.addRow('확인 근거',reference)
+        from .providers.flickr_feed import FlickrFeedProvider
+        dialog=QDialog(self);dialog.setWindowTitle('검색 출처 · 실험');form=QFormLayout(dialog)
+        note=QLabel('출처별 공개 검색·미리보기 연결입니다. 실제 다중 출처 동작은 아직 검증되지 않았습니다.\nKpopping: Windows Edge/Chrome 필요. 장원영 목록 경로만 사용자 관측으로 확인했습니다.\nFlickr: API 키 없는 공개 태그 피드, 검색어별 최근 최대 20개. 전체 이미지 검색·과거 페이지 탐색은 지원하지 않습니다.\n검색 결과의 인물·구도·원본은 미확정이며 원본 다운로드·분석·AI 권한을 부여하지 않습니다.');note.setWordWrap(True);form.addRow(note)
+        fields=[]
+        for provider_type,key,label in ((KpoppingBrowserProvider,'kpopping_browser_enabled','Kpopping 브라우저'),(FlickrFeedProvider,'flickr_feed_enabled','Flickr 공개 태그 피드')):
+            consent=QCheckBox(label+' · 이용 조건을 확인한 검색·미리보기만 활성화')
+            consent.setChecked(bool(self.settings.values.get(key,False)));form.addRow(consent)
+            reference=QLineEdit();reference.setPlaceholderText('확인한 이용 조건 URL 또는 문서 식별자')
+            existing=self.internet_search.providers.get(provider_type.name)
+            if existing:reference.setText(self.online_service.web.repo.permissions(existing.name)['metadata_search']['evidence'].get('reference',''))
+            form.addRow('확인 근거',reference);fields.append((provider_type,key,consent,reference))
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Save|QDialogButtonBox.StandardButton.Cancel);buttons.accepted.connect(dialog.accept);buttons.rejected.connect(dialog.reject);form.addRow(buttons)
         if dialog.exec()!=QDialog.DialogCode.Accepted:return
-        if not consent.isChecked() or not reference.text().strip():self.statusBar().showMessage('이용 조건 확인과 근거 기록이 필요합니다.');return
-        provider=KpoppingBrowserProvider(self.online_service)
-        evidence=dict(reference=reference.text().strip(),note='User-reviewed public metadata search and provided preview display only. Not verified original, identity or AI rights.')
-        self.online_service.web.repo.grant_many(provider.name,{'metadata_search':'allowed','thumbnail':'allowed'},evidence,enabled=True)
-        self.internet_search.providers[provider.name]=provider;self.settings.values['kpopping_browser_enabled']=True
-        self.statusBar().showMessage('브라우저 연결을 저장했습니다. 검색어 입력 후 인터넷 검색을 누르세요.',10000)
+        if any(consent.isChecked() and not reference.text().strip() for _,_,consent,reference in fields):self.statusBar().showMessage('활성화할 출처별 이용 조건 확인 근거가 필요합니다.');return
+        if self.search_flight:self.search_flight.cancelled.set()
+        self.search_session=None;self.search_auto_ready=False;self.next_search.setEnabled(False);self.search_scroll_timer.stop()
+        for provider_type,key,consent,reference in fields:
+            enabled=consent.isChecked();provider=provider_type(self.online_service)
+            if enabled:
+                evidence=dict(reference=reference.text().strip(),note='User-reviewed public metadata search and provided preview display only. Not verified original, identity or AI rights.')
+                self.online_service.web.repo.grant_many(provider.name,{'metadata_search':'allowed','thumbnail':'allowed'},evidence,enabled=True)
+                self.internet_search.providers[provider.name]=provider
+            else:
+                self.online_service.web.repo.enable(provider.name,False);self.internet_search.providers.pop(provider.name,None)
+            self.settings.values[key]=enabled
+        self.settings.save();self.refresh_source_filters()
+        self.statusBar().showMessage('검색 출처를 저장했습니다. 검색어 입력 후 인터넷 검색을 누르세요.',10000)
 
     def partial_search_results(self,session):
         if session!=self.search_session:return
@@ -489,24 +511,40 @@ class MainWindow(QMainWindow):
         except ValueError as error:self.statusBar().showMessage(str(error));return
         if self.search_flight:self.search_flight.cancelled.set()
         self.search_session=session;self.analysis_filter=filters;self.scope=('search',session);self.section='search'
+        self.search_auto_ready=False;self.search_scroll_timer.stop()
+        self.sort.blockSignals(True);self.sort.setCurrentIndex(self.sort.findData('discovery'));self.sort.blockSignals(False)
         self.library_mode.setCurrentIndex(self.library_mode.findData('all'))
         self.heading.setText('온라인 검색 · '+self.search.text().strip());self.subtitle.setText('출처 검색 후보 · 인물/구도/색상 미확정은 일치로 간주하지 않습니다.')
         self.reload();self.next_internet_page()
 
     def next_internet_page(self):
         if not self.search_session or (self.search_flight and not self.search_flight.cancelled.is_set()):return
-        session=self.search_session;self.next_search.setEnabled(False);self.sync_label.setText('검색 중')
+        session=self.search_session;self.search_auto_ready=False;self.next_search.setEnabled(False);self.sync_label.setText('검색 중')
         def done(result):
             self.search_flight=None
             if self.search_session!=session:return
             self.reload(preserve=True);self.next_search.setEnabled(result['state'] not in ('exhausted','blocked'))
-            self.sync_label.setText('일부 출처 실패 · 다음 검색 가능' if result.get('error') else ('다음 결과 있음' if result['state']!='exhausted' else '검색 끝 · 다음 페이지 없음'))
+            self.search_auto_ready=result['state']=='ready' and result['added']>0
+            if result['state']=='blocked':status='출처 접근 불가 · 확인 필요'
+            elif result.get('error'):status='일부 출처 실패 · '+('다음 검색 가능' if result['state']=='ready' else '남은 검색 경로 없음')
+            elif result['state']=='exhausted':status='현재 검색 경로 끝 · 사이트 전체 탐색 완료는 아님'
+            elif not result['added']:status='새 후보 없음 · 더 검색으로 재시도'
+            else:status='다음 결과 있음 · 스크롤 시 추가 검색'
+            self.sync_label.setText(status)
         def failed(message):
             self.search_flight=None
             if self.search_session!=session:return
             self.sync_label.setText('검색 불가 · 확인 필요');self.next_search.setEnabled(True)
             self.empty.setText('온라인 검색을 완료하지 못했습니다\n\n'+message);self.statusBar().showMessage(message,20000)
         self.search_flight=self.search_tasks.submit(lambda cancel:self.internet_search.page(session,cancel,self.search_results_ready.emit),done,failed,key='internet-search')
+
+    def search_near_bottom(self):
+        # Only user scroll gestures arm this timer. Model resets/anchor restoration
+        # must never produce an unbounded network request loop.
+        if not self.search_auto.isChecked() or not self.search_auto_ready or not self.search_session:return
+        if self.scope!=('search',self.search_session) or self.model.loading or self.bookmark is not None:return
+        bar=self.gallery.verticalScrollBar()
+        if bar.maximum()-bar.value()<=max(200,self.gallery.viewport().height()):self.next_internet_page()
 
     def search_changed(self):
         self.refresh_entities()
@@ -756,6 +794,7 @@ class MainWindow(QMainWindow):
         self.search_tasks.stop()
         self.search_timer.stop()
         self.remote_timer.stop()
+        self.search_scroll_timer.stop()
         self.online_runner.stop()
         self.gallery.close_tasks()
         self.model.close_tasks()

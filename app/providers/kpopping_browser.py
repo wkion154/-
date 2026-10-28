@@ -4,6 +4,7 @@ from pathlib import Path
 from .http import RemoteError,Cancelled
 from .kpopping_scroll import artist_filter
 from ..page_discovery import ParsedPage,ImageCandidate
+from .search_previews import allow_reviewed_previews
 
 # Exact public artist page observed in the user's Windows diagnostic, not a guessed ID.
 OBSERVED_PAGES={'장원영':'https://kpopping.com/kpics?idol=4ce3bdec-4bb1-4364-b84f-f3684cfc62d9&idolName=Jang%20Wonyoung','jang wonyoung':'https://kpopping.com/kpics?idol=4ce3bdec-4bb1-4364-b84f-f3684cfc62d9&idolName=Jang%20Wonyoung'}
@@ -18,25 +19,24 @@ class KpoppingBrowserProvider:
         repo=self.online.web.repo;repo.require(self.name,'metadata_search')
         term=query.strip().casefold();known=next((url for name,url in OBSERVED_PAGES.items() if term==name or term.startswith(name+' ')),None);url=known or 'https://kpopping.com/kpics'
         try:
-            result=self._worker(dict(query=query,url=url,known_artist_page=bool(known),batch=(cursor or {}).get('batch',0)),cancelled)
+            result=self._worker(dict(query=query,url=url,known_artist_page=bool(known),batch=(cursor or {}).get('batch',0),scroll_cursor=(cursor or {}).get('scroll_cursor')),cancelled)
         except Exception as error:
             self._audit(dict(query=query,state='error',error=str(error),stage1_complete=False));raise
         self._audit(dict(query=query,state='browser_candidates_received',page_url=result['page_url'],candidate_count=len(result['items']),original_verified=False,stage1_complete=False))
         if cancelled.is_set():raise Cancelled()
-        artist_filter(result['page_url'])
+        if not artist_filter(result['page_url'])[0]:raise RemoteError('검색 인물 필터가 없습니다.',blocked=True)
+        if known and artist_filter(result['page_url'])!=artist_filter(known):raise RemoteError('검색 인물 필터가 바뀌었습니다.',blocked=True)
         page_id=repo.add_page(self.name,result['page_url'])
-        parsed=ParsedPage(result['title'],[ImageCandidate(i['url'],i['logical_key'],i['title'],'thumbnail',None,None,i['provenance']) for i in result['items']],metadata=dict(query=query,original_verified=False,person_confirmed=False))
+        parsed=ParsedPage(result['title'],[ImageCandidate(i['url'],i['logical_key'],i['title'],'thumbnail',None,None,i['provenance']) for i in result['items']],metadata=dict(query=query,search_managed=True,original_verified=False,person_confirmed=False))
         # Worker output URLs are still checked against the registered source domain.
         from .http import validate_url
         for item in parsed.candidates:validate_url(item.url,SPEC['domains'])
         repo.require(self.name,'metadata_search');repo.index_page(repo.page(page_id),parsed)
         rows=repo.images(page_id=page_id,limit=1000)
-        if repo.allowed(self.name,'thumbnail'):
-            evidence=repo.permissions(self.name)['thumbnail']['evidence']
-            for row in rows:
-                with repo.db.connect() as c:existing=c.execute("SELECT 1 FROM resource_permissions WHERE resource_id=? AND operation='thumbnail'",('web:'+row['id'],)).fetchone()
-                if not existing:repo.grant(self.name,'thumbnail','allowed',evidence,'web:'+row['id'])
-        return ['web:'+row['id'] for row in rows],dict(batch=result['next_batch']) if result['next_batch'] is not None else None
+        allow_reviewed_previews(repo,self.name,rows)
+        next_cursor=dict(batch=result['next_batch']) if result['next_batch'] is not None else None
+        if next_cursor is not None and result.get('scroll_cursor'):next_cursor['scroll_cursor']=result['scroll_cursor']
+        return ['web:'+row['id'] for row in rows],next_cursor
     def _audit(self,data):
         folder=self.online.settings.root/'search-reports';folder.mkdir(parents=True,exist_ok=True)
         path=folder/('kpopping-'+str(time.time_ns())+'.json');path.write_text(json.dumps(data,ensure_ascii=False,indent=2),'utf-8')

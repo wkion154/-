@@ -16,7 +16,7 @@ def artist_filter(url):
     return tuple(query.get('idol',[])),tuple(query.get('idolName',[]))
 
 
-def capture_batch(page,query,cursor,cancelled,*,rounds=4,wait_ms=700):
+def capture_batch(page,query,cursor,cancelled,*,rounds=4,wait_ms=700,stop_on_stale=True):
     if not 1<=rounds<=12:raise ValueError('한 배치의 스크롤 횟수는 1~12입니다.')
     current_filter=artist_filter(page.url)
     if not current_filter[0]:raise RemoteError('인물 필터가 없는 전체 사이트 목록은 자동 수집하지 않습니다.',blocked=True)
@@ -39,10 +39,25 @@ def capture_batch(page,query,cursor,cancelled,*,rounds=4,wait_ms=700):
             if item.logical_key in seen:continue
             seen.add(item.logical_key);new.append(item);added+=1
         empty_rounds=empty_rounds+1 if not added else 0
-        if empty_rounds>=3:break
+        if stop_on_stale and empty_rounds>=3:break
         if iteration+1<rounds:
             page.evaluate('window.scrollTo(0, document.documentElement.scrollHeight)')
             page.wait_for_timeout(wait_ms)
     # Empty batches do not prove exhaustion: lazy loading can be slow. Caller can retry.
     next_cursor=dict(artist_filter=[list(v) for v in current_filter],seen=list(seen),batch=int(cursor.get('batch',0))+1)
     return new,next_cursor,dict(new_photo_candidates=len(new),consecutive_empty_rounds=empty_rounds,exhaustion_verified=False,stage1_complete=False)
+
+
+def capture_replayed_batch(page,query,batch,previous,cancelled):
+    """Retain discoveries at every replay position on a virtualized page.
+
+    Reopening is still less efficient than a persistent browser, but skipping
+    straight to the requested position loses photos that disappeared from DOM.
+    Previously seen logical keys remain in the cursor across worker processes.
+    """
+    if type(batch) is not int or not 0<=batch<=20:raise ValueError('추가 검색 배치 한도입니다.')
+    cursor=previous;items=[]
+    for _ in range(batch+1):
+        rows,cursor,_=capture_batch(page,query,cursor,cancelled,rounds=4,stop_on_stale=False)
+        items.extend(rows)
+    return items,cursor

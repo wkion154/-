@@ -112,3 +112,54 @@ def test_blocked_provider_is_not_retried_for_every_alias(searches):
         result=search.page(session,threading.Event())
         if result['state']=='exhausted':break
     assert len(calls)==1
+
+
+def test_discovery_order_appends_and_locates_across_session_and_saved_asset(searches,photo):
+    from app.images import inspect_image
+    search,provider=searches;repo=search.online.web.repo
+    session=search.start('장원영',AnalysisFilter());search.page(session,threading.Event())
+    first=LibraryRepository(search.db).query(scope=('search',session),sort='discovery')[0][0]['id']
+    page=repo.add_page('owned-test','https://owned.example/second')
+    repo.index_page(repo.page(page),discover_html('<img src="https://owned.example/second.png">','https://owned.example/second'))
+    second='web:'+repo.images(page_id=page)[0]['id']
+    provider.search_images=lambda *args:([second],None)
+    search.page(session,threading.Event())
+    library=LibraryRepository(search.db)
+    rows,total=library.query(scope=('search',session),sort='discovery')
+    assert total==2 and [r['id'] for r in rows]==[first,second]
+    assert library.locate(second,scope=('search',session),sort='discovery')==1
+    # A different session's discovery positions must not affect this one.
+    other=search.start('aespa',AnalysisFilter());search.page(other,threading.Event())
+    meta=inspect_image(photo)
+    asset,_=search.db.register(meta,origin='local')
+    repo.measured(first[4:],meta,photo)
+    repo.attach(repo.image(first[4:]),asset)
+    rows,total=library.query(scope=('search',session),sort='discovery')
+    assert total==2 and [r['id'] for r in rows]==[asset,second]
+    assert library.locate(first,scope=('search',session),sort='discovery')==0
+
+
+def test_scroll_requests_once_and_pauses_on_duplicate_only_page(qtbot,searches):
+    from app.main_window import MainWindow
+    search,provider=searches;window=MainWindow(search.db,search.online.settings);qtbot.addWidget(window);window.online_runner.timer.stop()
+    window.internet_search.providers={provider.name:provider};window.show();window.search.setText('장원영');window.start_internet_search()
+    qtbot.waitUntil(lambda:window.search_flight is None and window.model.total==1 and not window.model.loading)
+    assert window.search_auto_ready
+    # A result reload alone must not issue another browser/network request.
+    qtbot.wait(180);assert len(provider.calls)==1
+    window.gallery.more_requested.emit();window.gallery.more_requested.emit()
+    qtbot.waitUntil(lambda:len(provider.calls)==2 and window.search_flight is None)
+    window.gallery.more_requested.emit();qtbot.wait(180)
+    assert len(provider.calls)==2 and not window.search_auto_ready
+    assert window.model.total==1
+    window.navigate('local');window.gallery.more_requested.emit();qtbot.wait(180)
+    assert len(provider.calls)==2;window.close()
+
+
+def test_search_materialized_members_work_with_color_cte_and_explicit_sort(searches):
+    search,provider=searches;session=search.start('장원영',AnalysisFilter())
+    search.page(session,threading.Event())
+    library=LibraryRepository(search.db,filters=AnalysisFilter(color='#ff88aa',include_unknown=True))
+    for sort in ('discovery','newest','name','color_share'):
+        rows,total=library.query(scope=('search',session),sort=sort)
+        assert total==1 and library.locate(rows[0]['id'],scope=('search',session),sort=sort)==0

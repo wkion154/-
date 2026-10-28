@@ -153,6 +153,17 @@ class GalleryModel(QAbstractListModel):
         return False
 
 class GalleryView(QListView):
+    more_requested = Signal()
+
+    def wheelEvent(self,event):
+        downward=event.angleDelta().y()<0 or event.pixelDelta().y()<0
+        super().wheelEvent(event)
+        if downward:self.more_requested.emit()
+
+    def keyPressEvent(self,event):
+        super().keyPressEvent(event)
+        if event.key() in (Qt.Key.Key_End,Qt.Key.Key_PageDown,Qt.Key.Key_Down):self.more_requested.emit()
+
     def __init__(self, model, cache, parent=None):
         super().__init__(parent)
         self.setModel(model)

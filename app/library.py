@@ -57,7 +57,7 @@ class LibraryRepository:
         if scope:
             kind,value=scope
             if kind=='search':
-                where.append("EXISTS(SELECT 1 FROM search_hits h WHERE h.session_id=? AND (h.entry_id=e.id OR EXISTS(SELECT 1 FROM gallery_items original WHERE original.id=h.entry_id AND original.linked_asset_id=e.id)))");args.append(value)
+                pass # _query_context joins only this session's canonical image IDs.
             elif kind=='favorite':where.append('e.favorite=1')
             elif kind=='person':where.append(f'? IN {people}');args.append(value)
             elif kind=='solo':where.append(f'EXISTS(SELECT 1 FROM persons p WHERE p.id IN {people} AND p.solo=1)')
@@ -79,13 +79,28 @@ class LibraryRepository:
         extra,extra_args=self.filters.clauses();where.extend(extra);args.extend(extra_args)
         orders={'newest':'e.registered DESC,e.id','oldest':'e.registered,e.id','name':'e.name COLLATE NOCASE,e.id','resolution':'(e.width*e.height) DESC,e.id'}
         order=orders.get(sort,orders['newest'])
+        if sort=='discovery' and scope and scope[0]=='search':
+            # Session membership is append-only, including linked saved assets.
+            order="(SELECT m.position FROM search_members m WHERE m.entry_id=e.id),e.id"
         if sort=='color_share' and self.filters.color:order='COALESCE((SELECT share FROM color_hits h WHERE h.entry_id=e.id),-1) DESC,e.registered DESC,e.id'
         return ' WHERE '+' AND '.join(where),args,order
 
+    def _query_context(self,scope,index):
+        prefix,args=self.filters.prefix()
+        source='gallery_items e INDEXED BY '+index
+        if scope and scope[0]=='search':
+            # Resolve session hits once, then look up gallery rows by primary key.
+            # Scanning the entire library per hit caused quadratic search refreshes.
+            members='search_members AS MATERIALIZED (SELECT COALESCE(o.linked_asset_id,h.entry_id) AS entry_id,MIN(h.position) AS position FROM search_hits h JOIN gallery_items o ON o.id=h.entry_id WHERE h.session_id=? GROUP BY COALESCE(o.linked_asset_id,h.entry_id)) '
+            prefix=(prefix.rstrip()+', ' if prefix else 'WITH ')+members
+            args=[*args,scope[1]]
+            source='search_members membership JOIN gallery_items e ON e.id=membership.entry_id'
+        return prefix,args,source
+
     def query(self,scope=None,search='',sort='newest',offset=0,limit=256,count=True,source_filter=None,cancelled=None):
-        prefix,prefix_args=self.filters.prefix()
         clause,args,order=self._selection(scope,search,sort,source_filter)
         order_index={'newest':'gallery_newest','oldest':'gallery_oldest','name':'gallery_name','resolution':'gallery_pixels'}.get(sort,'gallery_newest')
+        prefix,prefix_args,source=self._query_context(scope,order_index)
         permitted=permission_sql('e.source_id','e.id','thumbnail')
         thumbnail=f"CASE WHEN e.kind='asset' THEN {asset_permission('thumbnail')} WHEN e.kind='commons' THEN ({permitted} AND {REVIEW} AND e.license_status='eligible' AND e.thumbnail_url IS NOT NULL) ELSE ({permitted} AND (e.has_preview=1 OR e.role='thumbnail')) END"
         from .analysis_filters import analysis_permission_sql
@@ -93,22 +108,23 @@ class LibraryRepository:
         share="COALESCE((SELECT share FROM color_hits h WHERE h.entry_id=e.id),CASE WHEN "+known+" THEN 0 ELSE NULL END)" if self.filters.color else 'NULL'
         with self.db.connect() as c:
             if cancelled is not None:c.set_progress_handler(lambda:int(cancelled.is_set()),1000)
-            total=c.execute(prefix+'SELECT COUNT(*) FROM gallery_items e INDEXED BY gallery_visibility'+clause,(*prefix_args,*args)).fetchone()[0] if count else None
-            rows=[dict(r) for r in c.execute(prefix+f"SELECT {share} AS color_share,e.*,COALESCE(a.path,'') AS path,COALESCE(a.managed,0) AS managed,{NEEDS_REVIEW} AS requires_review,{thumbnail} AS thumbnail_allowed FROM (SELECT e.* FROM gallery_items e INDEXED BY "+order_index+clause+" ORDER BY "+order+" LIMIT ? OFFSET ?) e LEFT JOIN assets a ON e.kind='asset' AND a.id=e.id ORDER BY "+order,(*prefix_args,*args,limit,offset))]
+            count_source=source if scope and scope[0]=='search' else 'gallery_items e INDEXED BY gallery_visibility'
+            total=c.execute(prefix+'SELECT COUNT(*) FROM '+count_source+clause,(*prefix_args,*args)).fetchone()[0] if count else None
+            rows=[dict(r) for r in c.execute(prefix+f"SELECT {share} AS color_share,e.*,COALESCE(a.path,'') AS path,COALESCE(a.managed,0) AS managed,{NEEDS_REVIEW} AS requires_review,{thumbnail} AS thumbnail_allowed FROM (SELECT e.* FROM "+source+clause+" ORDER BY "+order+" LIMIT ? OFFSET ?) e LEFT JOIN assets a ON e.kind='asset' AND a.id=e.id ORDER BY "+order,(*prefix_args,*args,limit,offset))]
         for row in rows:
             row['thumbnail_key']=row['sha256'] if row['kind']=='asset' else row['id']+'@'+str(row['sha256'] or row['image_url'])
         return rows,total
 
     def locate(self,identity,scope=None,search='',sort='newest',source_filter=None):
-        prefix,prefix_args=self.filters.prefix()
         clause,args,order=self._selection(scope,search,sort,source_filter)
         order_index={'newest':'gallery_newest','oldest':'gallery_oldest','name':'gallery_name','resolution':'gallery_pixels'}.get(sort,'gallery_newest')
+        prefix,prefix_args,source=self._query_context(scope,order_index)
         with self.db.connect() as c:
             row=c.execute('SELECT linked_asset_id,sha256,kind FROM gallery_items WHERE id=?',(identity,)).fetchone()
             if row and row['kind']!='asset':
                 asset=c.execute('SELECT id FROM assets WHERE id=?',(row['linked_asset_id'],)).fetchone()
                 if asset:identity=asset['id']
-            result=c.execute(prefix+'SELECT position FROM (SELECT e.id,ROW_NUMBER() OVER (ORDER BY '+order+')-1 AS position FROM gallery_items e INDEXED BY '+order_index+clause+') WHERE id=?',(*prefix_args,*args,identity)).fetchone()
+            result=c.execute(prefix+'SELECT position FROM (SELECT e.id,ROW_NUMBER() OVER (ORDER BY '+order+')-1 AS position FROM '+source+clause+') WHERE id=?',(*prefix_args,*args,identity)).fetchone()
             return result['position'] if result else None
 
     def entry(self,identity):
@@ -176,7 +192,7 @@ class LibraryService:
             return current
         if current['kind']=='web':
             item=self.online.web.repo.image(current['ref_id'])
-            if item['source_id']=='kpopping-browser' and item['role']=='thumbnail' and not self.online.web.repo.allowed(item['source_id'],'original_download',current['id']):
+            if item['role']=='thumbnail':
                 self.online.web.preview(item['id'],cancelled)
                 item=self.online.web.repo.image(item['id']);self.online.web.repo.require(item['source_id'],'thumbnail',current['id'])
                 return current|dict(path=item['cache_path'],sha256=item['sha256'],width=item['width'],height=item['height'],size=item['size'],format=item['mime'],managed=0,preview_only=True)

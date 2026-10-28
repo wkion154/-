@@ -1,4 +1,4 @@
-**검색 개편 1단계 Windows 앱 실험 ZIP:** [다운로드](https://github.com/wkion154/-/raw/refs/heads/k-idol-archive/releases/K-IDOL-ARCHIVE_Search_Stage1_Experimental.zip). 기존 앱에서 브라우저 수집 결과를 받는 코드가 포함됩니다. `WINDOWS_SEARCH_START.txt`를 먼저 읽으세요. Kpopping 연결 실험이며 실제 Windows 앱 성공·다중 사이트·원본 확인은 아직 미검증입니다. 기존 진단 도구나 정식 완료판과 구분합니다.
+**검색 개편 1단계 Windows 앱 실험 ZIP:** [다운로드](https://github.com/wkion154/-/raw/refs/heads/k-idol-archive/releases/K-IDOL-ARCHIVE_Search_Stage1_Experimental.zip). 기존 앱에 Kpopping 브라우저 검색과 Flickr 공개 태그 피드 경로, 스크롤 추가 검색을 연결했습니다. `WINDOWS_SEARCH_START.txt`를 먼저 읽으세요. Flickr는 검색어별 최근 최대 20개이며 전체 이미지 검색 API가 아닙니다. 실제 Windows 앱 성공·다중 사이트 사진 표시·원본 확인은 아직 미검증입니다. Python으로 실행하는 실험용 소스 ZIP이며 EXE 또는 정식 완료판이 아닙니다.
 
 **Windows 접속 확인 도구:** [진단 ZIP 다운로드](https://github.com/wkion154/-/raw/refs/heads/k-idol-archive/releases/K-IDOL-ARCHIVE_Windows_Search_Check.zip). 압축 해제 후 `START_CHECK.bat` 실행 → 이름 입력 → 브라우저 검색 결과 확인 → 생성된 `search-report.json`을 대화에 첨부하세요. Python 3.12와 Edge/Chrome이 필요합니다. 진단 도구이며 완성된 검색 앱이 아닙니다. Windows 실기 미검증.
 

@@ -15,6 +15,9 @@ class SearchService:
         if providers is None:
             from .providers.page_search import PageSearchProvider
             providers=[]
+            if online.settings.values.get('flickr_feed_enabled',False):
+                from .providers.flickr_feed import FlickrFeedProvider
+                providers.append(FlickrFeedProvider(online))
             if online.settings.values.get('kpopping_browser_enabled',False):
                 from .providers.kpopping_browser import KpoppingBrowserProvider
                 providers.append(KpoppingBrowserProvider(online))

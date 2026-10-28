@@ -75,6 +75,8 @@ class WebService:
     def scan(self,page_id,cancelled):
         page=self.repo.page(page_id);source=page['source_id'];spec=self.repo.spec(source)
         self.repo.require(source,'metadata_search')
+        if json.loads(page['metadata'] or '{}').get('search_managed'):
+            raise RemoteError('검색 전용 출처입니다. 인터넷 검색에서 해당 검색 경로로 다시 요청하세요.',blocked=True)
         if spec.adapter not in ('html','rendered','direct'):raise RemoteError('이 출처의 공개 페이지 어댑터는 아직 지원하지 않습니다.',blocked=True)
         if spec.adapter=='direct' and page['mode']!='direct':raise RemoteError('직접 이미지 출처에는 직접 URL 모드를 사용하세요.',blocked=True)
         if page['mode']=='direct':
@@ -259,6 +261,7 @@ class WebService:
     def schedule(self,queue):
         for source in self.repo.profiles():
             for page in self.repo.pages(source['id']):
+                if json.loads(page['metadata'] or '{}').get('search_managed'):continue
                 if page['next_due']<=self.clock() and self.repo.allowed(page['source_id'],'metadata_search'):
                     queue.enqueue('web_scan',{'page_id':page['id']},key='web_scan:'+page['id'],refresh_after=6*3600)
 

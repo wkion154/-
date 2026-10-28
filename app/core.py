@@ -33,7 +33,7 @@ class Settings:
         size = self.values.get('thumbnail_size')
         if not isinstance(size, int) or not 128 <= size <= 384:
             self.values['thumbnail_size'] = 216
-        if self.values['sort'] not in ('newest', 'oldest', 'name', 'resolution','color_share'):
+        if self.values['sort'] not in ('newest', 'oldest', 'name', 'resolution','color_share','discovery'):
             self.values['sort'] = 'newest'
         for key in ('cache_path', 'storage_path'):
             if not isinstance(self.values[key], str):

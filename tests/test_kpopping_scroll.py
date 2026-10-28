@@ -1,6 +1,6 @@
 import threading
 import pytest
-from app.providers.kpopping_scroll import capture_batch
+from app.providers.kpopping_scroll import capture_batch,capture_replayed_batch
 from app.providers.http import RemoteError,Cancelled
 
 class Page:
@@ -32,3 +32,13 @@ def test_all_feed_or_changed_artist_is_not_mixed():
 def test_cancel_stops_before_page_access():
     cancel=threading.Event();cancel.set()
     with pytest.raises(Cancelled):capture_batch(Page(),'장원영',None,cancel)
+
+
+def test_replay_collects_intermediate_virtualized_photos_and_skips_known_keys():
+    cancel=threading.Event()
+    first,cursor=capture_replayed_batch(Page(),'장원영',0,None,cancel)
+    assert len(first)==4
+    # A new browser process reopens at zero; intermediate new cards must survive.
+    more,next_cursor=capture_replayed_batch(Page(),'장원영',2,cursor,cancel)
+    assert len(more)==6 and len(next_cursor['seen'])==10
+    assert not {item.logical_key for item in first}&{item.logical_key for item in more}

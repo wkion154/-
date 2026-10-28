@@ -1,0 +1,16 @@
+{
+  "synthetic": true,
+  "network_used": false,
+  "gallery_items": 10000,
+  "search_hits": 1000,
+  "returned_rows": 256,
+  "runs_seconds": [
+    0.03749307199905161,
+    0.03575112700491445,
+    0.03981698200368555,
+    0.036347481996926945,
+    0.03370087000075728
+  ],
+  "median_seconds": 0.036347481996926945,
+  "scope": "SQLite metadata count + first page only; excludes network, thumbnail decode and Windows UI"
+}
