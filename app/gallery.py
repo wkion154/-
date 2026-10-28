@@ -164,6 +164,7 @@ class GalleryView(QListView):
         self.errors = set()
         self.pending = {}
         self.cache = cache
+        self.authorize = None
         self.tasks = Tasks(self, 2)
         self.edge = 216
         self.setItemDelegate(PhotoDelegate(self))
@@ -246,9 +247,11 @@ class GalleryView(QListView):
                 self.errors.add(key)
                 self.viewport().update()
                 self.schedule()
-            job = self.tasks.submit(
-                lambda _, path=path, cache=cache, key=key: decode_preview(make_thumbnail(path,cache,key),512),
-                done,error)
+            def decode(_, path=path, cache=cache, key=key, row=dict(row)):
+                if self.authorize is not None and not self.authorize(row):
+                    raise ValueError('이 사진의 표시 권한을 먼저 확인하세요.')
+                return decode_preview(make_thumbnail(path,cache,key),512)
+            job = self.tasks.submit(decode,done,error)
             self.pending[key] = (token,job)
     def restore_anchor(self, position, y_offset, selected_position=None):
         self.anchor = position,y_offset,selected_position,time.monotonic()+5

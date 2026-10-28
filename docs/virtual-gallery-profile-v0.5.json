@@ -1,0 +1,25 @@
+{
+  "scope": "Linux Qt offscreen actual QListView; synthetic metadata references one generated 640x960 JPEG with distinct asset hashes. This tests virtual positions/page residency, not 100k distinct photo decodes or physical monitor frame rate. Process RSS is cumulative high-water mark.",
+  "results": [
+    {
+      "metadata_count": 10000,
+      "first_thumbnail_ms": 61.03,
+      "last_page_navigation_ms": 5.5,
+      "max_resident_metadata": 2048,
+      "thumbnail_cache_count": 15,
+      "event_loop_max_gap_ms": 28.38,
+      "event_loop_p95_gap_ms": 27.75,
+      "peak_process_rss_mib": 119.16
+    },
+    {
+      "metadata_count": 100000,
+      "first_thumbnail_ms": 48.1,
+      "last_page_navigation_ms": 13.16,
+      "max_resident_metadata": 2048,
+      "thumbnail_cache_count": 17,
+      "event_loop_max_gap_ms": 14.29,
+      "event_loop_p95_gap_ms": 11.18,
+      "peak_process_rss_mib": 146.24
+    }
+  ]
+}

@@ -14,13 +14,15 @@ from .providers.wikimedia import WikimediaProvider
 from .online_service import OnlineService
 from .online_runner import OnlineRunner
 from .online_dialog import OnlineDialog
+from .related_dialog import RelatedDialog
+from .related import RelatedRepository
 
 class MainWindow(QMainWindow):
     import_progress = Signal(int)
     def __init__(self,db,settings):
         super().__init__()
         self.db,self.settings=db,settings
-        self.setWindowTitle('K-IDOL ARCHIVE · Alpha 4')
+        self.setWindowTitle('K-IDOL ARCHIVE · Alpha 5')
         self.resize(1440,920)
         self.setMinimumSize(820,560)
         self.scope=None
@@ -87,7 +89,7 @@ class MainWindow(QMainWindow):
         self.tree.customContextMenuRequested.connect(self.entity_menu)
         side.addWidget(self.tree,1)
         side.addWidget(self.button('멤버 연결 관리',self.memberships))
-        label=QLabel('ALPHA 4\n로컬 우선 · 원본 보존')
+        label=QLabel('ALPHA 5\n로컬 우선 · 원본 보존')
         label.setObjectName('muted')
         side.addWidget(label)
         self.splitter.addWidget(self.sidebar)
@@ -178,9 +180,11 @@ class MainWindow(QMainWindow):
         info.addWidget(self.fav_button)
         self.associate_button=self.button('그룹 · 인물 연결',self.associate)
         info.addWidget(self.associate_button)
+        self.related_button=self.button('연관 사진 찾기',self.open_related)
+        info.addWidget(self.related_button)
         self.relink_button=self.button('원본 다시 연결',self.relink)
         info.addWidget(self.relink_button)
-        for b in (self.fav_button,self.associate_button,self.relink_button):b.setEnabled(False)
+        for b in (self.fav_button,self.associate_button,self.relink_button,self.related_button):b.setEnabled(False)
         info.addStretch()
         label=QLabel('원본 파일은 변경하지 않습니다.\n등록일과 촬영일은 별도로 관리합니다.')
         label.setObjectName('muted')
@@ -335,7 +339,7 @@ class MainWindow(QMainWindow):
                 self.bookmark=(row['id'],self.gallery.visualRect(index).top(),self.selected['id'] if self.selected else None)
         self.selected=None
         self.info_name.setText('사진을 선택하세요')
-        for b in (self.fav_button,self.associate_button,self.relink_button):b.setEnabled(False)
+        for b in (self.fav_button,self.associate_button,self.relink_button,self.related_button):b.setEnabled(False)
         self.model.reload(self.scope,self.search.text(),self.sort.currentData(),source_filter=self.selected_source_filter())
     def loaded(self,total):
         if self.bookmark is not None and not self.model.loading:
@@ -445,7 +449,7 @@ class MainWindow(QMainWindow):
         self.selected=row
         self.info_name.setText(row['name'])
         self.fav_button.setText('★ 즐겨찾기 해제' if row['favorite'] else '☆ 즐겨찾기')
-        for b in (self.fav_button,self.associate_button,self.relink_button):b.setEnabled(True)
+        for b in (self.fav_button,self.associate_button,self.relink_button,self.related_button):b.setEnabled(True)
         people,groups=self.db.associations(row['id'])
         self.info_text.setText(f"{row['width']:,} × {row['height']:,}\n{row['format']}  ·  {row['size']/1024/1024:.2f} MB\n\n인물: {', '.join(p['name'] for p in people) or '미연결'}\n그룹: {', '.join(g['name'] for g in groups) or '미연결'}\n\n{'앱 관리 원본' if row['managed'] else '외부 파일 참조'}\n{row['path']}")
         with self.db.connect() as conn:
@@ -496,10 +500,18 @@ class MainWindow(QMainWindow):
         self.gallery.setCurrentIndex(index)
         menu=QMenu(self)
         menu.addAction('뷰어에서 열기',lambda:self.open_viewer(index))
+        menu.addAction('이 사진과 연관된 사진 찾기',self.open_related)
         menu.addAction('즐겨찾기 전환',self.toggle_favorite)
         menu.addAction('그룹 · 인물 연결',self.associate)
         menu.addAction('원본 다시 연결',self.relink)
         menu.exec(self.gallery.viewport().mapToGlobal(pos))
+    def open_related(self,identity=None):
+        if not isinstance(identity,str):identity=self.selected['id'] if self.selected else None
+        if not identity:return
+        dialog=RelatedDialog(self.db,self.settings,identity,self)
+        dialog.exec();dialog.deleteLater()
+        self.reload(preserve=True)
+
     def open_viewer(self,index):
         if not index.isValid() or self.model.row_at(index.row()) is None:return
         scroll=self.gallery.verticalScrollBar().value()
@@ -507,10 +519,11 @@ class MainWindow(QMainWindow):
         source_filter=self.model.source_filter
         base=(index.row()//self.model.PAGE_SIZE)*self.model.PAGE_SIZE
         seed=[dict(r) for r in self.model.pages[base//self.model.PAGE_SIZE]]
-        viewer=Viewer(seed,index.row()-base,self,self.settings.values['viewer_mode'],lambda offset:self.db.query(scope,search,sort,offset,source_filter=source_filter),self.model.total,base_index=base)
+        viewer=Viewer(seed,index.row()-base,self,self.settings.values['viewer_mode'],lambda offset:self.db.query(scope,search,sort,offset,source_filter=source_filter),self.model.total,base_index=base,related_repo=RelatedRepository(self.db),related_cache=self.settings.cache)
         def favorite(identity,value):
             self.persist_favorite(identity,value)
         viewer.favorite_changed.connect(favorite)
+        viewer.related_requested.connect(self.open_related)
         viewer.exec()
         viewer.deleteLater()
         self.gallery.verticalScrollBar().setValue(scroll)

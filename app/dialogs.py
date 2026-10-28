@@ -149,7 +149,7 @@ class SettingsDialog(QDialog):
         self.mode.addItem('원본 픽셀 · 전체 해상도','actual')
         self.mode.setCurrentIndex(1 if settings.values['viewer_mode']=='actual' else 0)
         form.addRow('뷰어 시작 방식',self.mode)
-        label=QLabel('차콜 다크 테마 · 로컬 라이브러리 Alpha 4\n캐시 경로 변경은 기존 파일을 이동·삭제하지 않습니다.\n온라인 연결 상태는 상단 온라인에서 확인하세요. AI는 후속 단계입니다.')
+        label=QLabel('차콜 다크 테마 · 로컬 라이브러리 Alpha 5\n캐시 경로 변경은 기존 파일을 이동·삭제하지 않습니다.\n온라인 연결 상태는 상단 온라인에서 확인하세요. AI는 후속 단계입니다.')
         label.setWordWrap(True)
         form.addRow(label)
         b=QDialogButtonBox(QDialogButtonBox.StandardButton.Save|QDialogButtonBox.StandardButton.Cancel)

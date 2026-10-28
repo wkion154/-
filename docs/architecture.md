@@ -1,3 +1,15 @@
+# Alpha 5 architecture update
+
+`related_schema.py` adds schema v4 transactionally, backing up existing v1/v2/v3 databases. Canonically ordered `related_overrides` store symmetric user-confirmed event/related/excluded decisions and evidence without modifying assets or identity links. `related_searches` stores one latest audit snapshot per seed, including input hashes, algorithm version and ranked reasons; it is never reused as an authorization token. Date and reverse relationship indexes bound candidate lookups.
+
+`related.py` samples at most 256 entries per reason into a pool of at most 1,024 assets and returns at most 120 results. It joins only confirmed person links, distinguishes capture/publication dates, and never substitutes registration dates. Existing permitted dHash features are compared only for current saved revisions and currently permitted analysis on both images. Visual proximity and shared pages are suggestions, never event/identity proof. User exclusions are rechecked directly for each candidate.
+
+Reference mode requires a selected confirmed Person ID and separate local-analysis/AI-input rights on seed and candidate. Remote origins need a current reviewed source and resource revision; an additional local import marker cannot bypass those checks. Thumbnail and original-view rights are separate. No restoration model runs.
+
+`related_dialog.py` performs searches, original-list preparation and mutations off the GUI thread. A close request during an explicit mutation waits for its result. `related_strip.py` is opt-in with 12 list items, a single low-priority worker and serial thumbnail delivery. Seed changes/hiding invalidate generations; closing stops workers and releases icons. Existing virtual gallery, bounded thumbnail and viewer caches remain in place. The reusable gallery accepts an optional worker-side thumbnail authorization callback.
+
+External provider policy/API and Windows validation gates remain open. See stage-5-report.md for tested scope and remaining fifth-stage work. Older architecture notes below describe their original release versions.
+
 # Alpha 3 architecture update
 
 `online_schema.py` adds schema v2 transactionally. A version-1 SQLite backup is retained before migration. Local originals remain in `assets`; remote candidates live in `remote_images` and only verified user-requested originals are attached to local assets. Provider IDs and file-revision hashes identify remote revisions independently of local SHA256 deduplication.

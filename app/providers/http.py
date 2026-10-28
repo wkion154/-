@@ -61,7 +61,7 @@ class HttpClient:
             if cancelled.wait(wait):raise Cancelled()
             self.last[host]=time.monotonic()
         if cancelled.is_set():raise Cancelled()
-        request=Request(url,headers={'User-Agent':'K-IDOL-ARCHIVE/0.4.0 (desktop photo archive)', 'Accept':accept})
+        request=Request(url,headers={'User-Agent':'K-IDOL-ARCHIVE/0.5.0 (desktop photo archive)', 'Accept':accept})
         try:
             return self.opener.open(request,timeout=self.timeout)
         except HTTPError as error:

@@ -64,7 +64,7 @@ def test_v1_migration_backup_and_user_data_preserved(tmp_path):
         assert saved.execute('SELECT name FROM groups').fetchone()[0]=='User Name'
     Database(path)
     assert len(list(tmp_path.glob('*.bak')))==1
-    with db.connect() as migrated:assert migrated.execute('PRAGMA user_version').fetchone()[0]==3
+    with db.connect() as migrated:assert migrated.execute('PRAGMA user_version').fetchone()[0]==4
 
 
 def test_external_identity_never_merges_same_name_or_overwrites_user(db):

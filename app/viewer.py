@@ -102,10 +102,11 @@ class Canvas(QGraphicsView):
 class Viewer(QDialog):
     favorite_changed = Signal(str, bool)
     image_ready = Signal(str)
+    related_requested = Signal(str)
     MAX_RECORDS = 768
 
     def __init__(self, rows, position, parent=None, mode='fit', load_more=None,
-                 total=None, base_index=0):
+                 total=None, base_index=0, related_repo=None, related_cache=None):
         super().__init__(parent)
         self.setWindowTitle('감상 · K-IDOL ARCHIVE')
         self.resize(1200, 820)
@@ -125,6 +126,8 @@ class Viewer(QDialog):
         self.displayed_id = None
         self.mode = mode
         self.last_cache_hit = False
+        self.related_strip = None
+        self.strip_auto_hidden = False
         self.prefetch_timer = QTimer(self)
         self.prefetch_timer.setSingleShot(True)
         self.prefetch_timer.timeout.connect(self.prefetch_neighbors)
@@ -134,6 +137,7 @@ class Viewer(QDialog):
         self.hide_timer.timeout.connect(self.hide_chrome)
         layout = QVBoxLayout(self)
         self.title = QLabel()
+        self.title.setTextFormat(Qt.TextFormat.PlainText)
         layout.addWidget(self.title)
         self.controls = QWidget()
         self.bar = QHBoxLayout(self.controls)
@@ -145,7 +149,7 @@ class Viewer(QDialog):
                               ('−', lambda: self.canvas.zoom(1/1.2)), ('＋', lambda: self.canvas.zoom(1.2)),
                               ('화면 맞춤', lambda: self.canvas.fit()),
                               ('원본 픽셀', self.actual), ('전체화면', self.fullscreen),
-                              ('☆', self.favorite), ('닫기', self.close)]:
+                              ('☆', self.favorite), ('미리보기', self.toggle_related_strip), ('연관 사진', self.related), ('닫기', self.close)]:
             button = QPushButton(label)
             if label=='화면 맞춤':
                 button.setText('맞춤 ▾')
@@ -163,7 +167,15 @@ class Viewer(QDialog):
         self.canvas.zoomed.connect(lambda scale: self.zoom_label.setText(f'{scale*100:.1f}%'))
         self.canvas.activity.connect(self.show_chrome)
         layout.addWidget(self.canvas,1)
+        if related_repo is not None and related_cache is not None:
+            from .related_strip import RelatedStrip
+            self.related_strip = RelatedStrip(related_repo,related_cache,self)
+            self.related_strip.activated.connect(self.related_requested.emit)
+            layout.addWidget(self.related_strip)
+        self.buttons['미리보기'].setEnabled(self.related_strip is not None)
+        self.buttons['미리보기'].setToolTip('연관 사진 필름스트립 표시/숨김')
         self.info = QLabel()
+        self.info.setTextFormat(Qt.TextFormat.PlainText)
         self.info.setWordWrap(True)
         self.info.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self.info)
@@ -187,6 +199,7 @@ class Viewer(QDialog):
             self.current_job.cancelled.set()
         self.prefetch_timer.stop()
         row = self.rows[self.position]
+        if self.related_strip:self.related_strip.set_seed(row['id'])
         key = self.key(row,actual)
         self.title.setText(f"{self.base_index+self.position+1} / {self.total}   {row['name']}")
         self.info.setText(f"불러오는 중…  ·  {row['width']:,} × {row['height']:,}\n{row['path']}")
@@ -313,6 +326,9 @@ class Viewer(QDialog):
         self.show_chrome()
 
     def show_chrome(self):
+        if self.related_strip and self.strip_auto_hidden:
+            self.strip_auto_hidden=False
+            self.related_strip.show();self.related_strip.refresh()
         self.title.show()
         self.controls.show()
         self.info.show()
@@ -325,10 +341,20 @@ class Viewer(QDialog):
             # Keep errors/loading visible; only hide controls after a successful image load.
             if self.canvas.item is None:
                 return
+            if self.related_strip and not self.related_strip.isHidden():
+                self.strip_auto_hidden=True;self.related_strip.hide();self.related_strip.cancel()
             self.title.hide()
             self.controls.hide()
             self.info.hide()
             self.canvas.viewport().setCursor(Qt.CursorShape.BlankCursor)
+
+    def toggle_related_strip(self):
+        if self.related_strip:self.related_strip.toggle()
+        self.show_chrome()
+
+    def related(self):
+        self.show_chrome()
+        self.related_requested.emit(self.rows[self.position]['id'])
 
     def favorite(self):
         row = self.rows[self.position]
@@ -343,6 +369,7 @@ class Viewer(QDialog):
         self.generation += 1
         self.prefetch_timer.stop()
         self.hide_timer.stop()
+        if self.related_strip:self.related_strip.shutdown()
         self.tasks.stop()
         self.prefetch_tasks.stop()
         self.prefetch_jobs.clear()
