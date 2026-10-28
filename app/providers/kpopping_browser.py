@@ -20,7 +20,7 @@ class KpoppingBrowserProvider:
         repo=self.online.web.repo;repo.require(self.name,'metadata_search')
         term=query.strip().casefold();known=next((url for name,url in OBSERVED_PAGES.items() if term==name or term.startswith(name+' ')),None);url=known or 'https://kpopping.com/kpics'
         try:
-            result=self._worker(dict(query=query,url=url,known_artist_page=bool(known),batch=(cursor or {}).get('batch',0),scroll_cursor=(cursor or {}).get('scroll_cursor')),cancelled)
+            result=self._worker(dict(query=query,url=url,known_artist_page=bool(known),batch=(cursor or {}).get('batch',0),scroll_cursor=(cursor or {}).get('scroll_cursor'),show_browser=self.online.settings.values.get('kpopping_show_browser') is True),cancelled)
         except Exception as error:
             self._audit(dict(query=query,state='error',error=str(error),stage1_complete=False));raise
         self._audit(dict(query=query,state='browser_candidates_received',page_url=result['page_url'],candidate_count=len(result['items']),filter_verified=result.get('filter_verified') is True,original_verified=False,stage1_complete=False))

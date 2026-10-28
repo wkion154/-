@@ -1,0 +1,9 @@
+{
+  "scope": "Linux synthetic 12MP PNG, warm cache, no network/Windows timing",
+  "source_bytes": 30587678,
+  "preview_bytes": 57138,
+  "old_median_seconds": 0.21656025199990836,
+  "new_median_seconds": 0.01188094799999817,
+  "ratio": 18.22752292156667,
+  "repeats": 7
+}

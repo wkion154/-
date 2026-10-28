@@ -23,6 +23,7 @@ def check(online, query, *, search=None, limit=3, batches=2, check_files=False, 
                   sources=list(search.providers), pages=[], items=[], errors=[],
                   file_check_requested=check_files, save_requested=save,
                   provided_preview_enabled=online.settings.values.get('kpopping_provided_preview') is True,
+                  search_browser_visible=online.settings.values.get('kpopping_show_browser') is True,
                   permissions_changed=False, ui_verified=False, stage1_complete=False,
                   checks_passed=False)
     try:

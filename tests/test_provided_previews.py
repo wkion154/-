@@ -96,3 +96,47 @@ def test_search_opt_in_grants_new_candidates_but_preserves_photo_denial(files,mo
     repo.grant(provider.name,'original_download','denied',EVIDENCE,'web:'+identity)
     provider.search_images('장원영',None,threading.Event())
     assert not repo.allowed(provider.name,'original_download','web:'+identity)
+
+
+def test_warm_preview_avoids_full_file_hash_download_and_decode(files,monkeypatch):
+    import app.provided_preview_cache as cache
+    online,identity,client,_,_,cdn=files
+    allow_file(online,identity);online.settings.values['kpopping_provided_preview']=True
+    first=online.web.preview(identity,threading.Event())
+    monkeypatch.setattr(cache,'resolve',lambda *args:pytest.fail('Warm preview must not resolve the full file'))
+    second=online.web.preview(identity,threading.Event())
+    assert first.size()==second.size() and client.calls.count(cdn)==1
+    assert online.db.query()[1]==0
+
+
+def test_small_cache_tampering_does_not_silently_replace_it(files):
+    from pathlib import Path
+    online,identity,client,_,_,cdn=files
+    allow_file(online,identity);online.settings.values['kpopping_provided_preview']=True
+    online.web.preview(identity,threading.Event())
+    with online.db.connect() as connection:
+        path=connection.execute('SELECT path FROM provided_preview_cache WHERE item_id=?',(identity,)).fetchone()[0]
+    Path(path).write_bytes(b'changed')
+    with pytest.raises(RemoteError,match='캐시가 변경'):
+        online.web.preview(identity,threading.Event())
+    assert client.calls.count(cdn)==1
+
+
+def test_removed_preview_is_regenerated_from_verified_file_without_redownload(files):
+    from pathlib import Path
+    online,identity,client,_,_,cdn=files
+    allow_file(online,identity);online.settings.values['kpopping_provided_preview']=True
+    online.web.preview(identity,threading.Event())
+    with online.db.connect() as connection:
+        path=connection.execute('SELECT path FROM provided_preview_cache WHERE item_id=?',(identity,)).fetchone()[0]
+    Path(path).unlink()
+    assert not online.web.preview(identity,threading.Event()).isNull()
+    assert client.calls.count(cdn)==1
+
+
+def test_warm_preview_obeys_revoked_thumbnail_permission(files):
+    online,identity,_,_,_,_=files
+    allow_file(online,identity);online.settings.values['kpopping_provided_preview']=True
+    online.web.preview(identity,threading.Event())
+    online.web.repo.grant('kpopping-browser','thumbnail','denied',EVIDENCE,'web:'+identity)
+    with pytest.raises(RemoteError):online.web.preview(identity,threading.Event())

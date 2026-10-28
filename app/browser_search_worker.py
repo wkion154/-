@@ -5,6 +5,15 @@ from urllib.parse import urlsplit
 from urllib.robotparser import RobotFileParser
 
 
+def launch_browser(chromium,show_browser=False):
+    for channel in ('msedge','chrome'):
+        try:
+            return chromium.launch(channel=channel,headless=show_browser is not True,chromium_sandbox=True)
+        except Exception:
+            pass
+    raise RuntimeError('Windows Edge/Chrome 검색 브라우저를 시작하지 못했습니다. 검색 출처의 [검색 브라우저 표시]에서 표시 모드로 진단할 수 있습니다.')
+
+
 def run(request):
     if platform.system()!='Windows':raise RuntimeError('이 브라우저 검색은 Windows 사용자 PC에서 실행해야 합니다.')
     from playwright.sync_api import sync_playwright
@@ -13,11 +22,7 @@ def run(request):
     url=request['url'];host=urlsplit(url).hostname
     if host!='kpopping.com' or urlsplit(url).scheme!='https':raise ValueError('등록되지 않은 브라우저 검색 사이트입니다.')
     with sync_playwright() as playwright:
-        browser=None
-        for channel in ('msedge','chrome'):
-            try:browser=playwright.chromium.launch(channel=channel,headless=False,chromium_sandbox=True);break
-            except Exception:pass
-        if browser is None:raise RuntimeError('Windows Edge/Chrome이 필요합니다.')
+        browser=launch_browser(playwright.chromium,request.get('show_browser') is True)
         try:
             context=browser.new_context(accept_downloads=False,service_workers='block')
             response=context.request.get('https://kpopping.com/robots.txt',timeout=15000)

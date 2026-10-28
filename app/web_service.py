@@ -28,6 +28,8 @@ class WebService:
     def __init__(self,db,settings,clock=time.time,http_factory=None,renderer=None):
         self.db,self.settings,self.clock=db,settings,clock
         self.repo=SourceRepository(db,clock)
+        with db.connect() as connection:
+            connection.execute('CREATE TABLE IF NOT EXISTS provided_preview_cache(item_id TEXT PRIMARY KEY REFERENCES web_images(id) ON DELETE CASCADE,source_url TEXT NOT NULL,preview_url TEXT NOT NULL,path TEXT NOT NULL,sha256 TEXT NOT NULL,provided_sha256 TEXT NOT NULL)')
         self.clients={}
         self.http_factory=http_factory or (lambda spec:HttpClient(interval=spec.interval_seconds,allowed_hosts=spec.domains,public_only=True))
         self.renderer=renderer
@@ -261,17 +263,13 @@ class WebService:
         # Do not turn display permission into permission to fetch an unknown original.
         if not item['cache_path']:
             if item['role']!='thumbnail':raise RemoteError('검사된 이미지가 없습니다. 원본 임시 검사 권한도 별도로 필요합니다.')
-            from .provided_files import source_url,resolve
+            from .provided_files import source_url
             provided=source_url(item)
             if provided and self.settings.values.get('kpopping_provided_preview') is True:
                 # Explicit opt-in plus both source/item download grants. The CDN
                 # policy is checked independently; the blocked wrapper is not used.
-                version=resolve(self,identity,cancelled)
-                self.repo.require(item['source_id'],'thumbnail','web:'+identity)
-                result=decode_preview(version['path'],512)
-                self.repo.require(item['source_id'],'original_download','web:'+identity)
-                self.repo.require(item['source_id'],'thumbnail','web:'+identity)
-                return result
+                from .provided_preview_cache import preview
+                return preview(self,identity,cancelled)
             try:self.probe(identity,cancelled,operation='thumbnail')
             except RemoteError as error:
                 if provided and error.blocked:

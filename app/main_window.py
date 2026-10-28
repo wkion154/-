@@ -486,6 +486,10 @@ class MainWindow(QMainWindow):
         files_preview.setChecked(self.settings.values.get('kpopping_provided_preview') is True)
         files_preview.setToolTip('파일 다운로드 이용 조건을 확인한 경우에만 선택하세요. 출처와 새 검색 후보의 파일 다운로드를 허용하며, 기존 사진별 거부는 유지합니다. 영구 보관·분석·AI는 실행하지 않습니다.')
         form.addRow(files_preview)
+        show_browser=QCheckBox('검색 브라우저 표시 (문제 확인용)')
+        show_browser.setChecked(self.settings.values.get('kpopping_show_browser') is True)
+        show_browser.setToolTip('기본은 창 없이 백그라운드에서 검색합니다. 표시 모드에서는 자동 스크롤과 종료 과정이 보입니다.')
+        form.addRow(show_browser)
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Save|QDialogButtonBox.StandardButton.Cancel);buttons.accepted.connect(dialog.accept);buttons.rejected.connect(dialog.reject);form.addRow(buttons)
         if dialog.exec()!=QDialog.DialogCode.Accepted:return
         if any(consent.isChecked() and not reference.text().strip() for _,_,consent,reference in fields):self.statusBar().showMessage('활성화할 출처별 이용 조건 확인 근거가 필요합니다.');return
@@ -504,6 +508,7 @@ class MainWindow(QMainWindow):
                 self.online_service.web.repo.enable(provider.name,False);self.internet_search.providers.pop(provider.name,None)
             self.settings.values[key]=enabled
         self.settings.values['kpopping_provided_preview']=files_preview.isChecked()
+        self.settings.values['kpopping_show_browser']=show_browser.isChecked()
         self.settings.save();self.refresh_source_filters()
         self.statusBar().showMessage('검색 출처를 저장했습니다. 검색어 입력 후 인터넷 검색을 누르세요.',10000)
 
