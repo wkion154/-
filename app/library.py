@@ -56,7 +56,9 @@ class LibraryRepository:
             where.append("e.hidden=0 AND e.id NOT IN (SELECT v.asset_id FROM asset_visibility v WHERE v.hidden=1 AND EXISTS(SELECT 1 FROM image_person ip JOIN persons p ON p.id=ip.person_id WHERE ip.image_id=v.asset_id AND p.gender='male') AND NOT EXISTS(SELECT 1 FROM image_person ip JOIN persons p ON p.id=ip.person_id WHERE ip.image_id=v.asset_id AND p.gender<>'male') AND NOT EXISTS(SELECT 1 FROM asset_sources s WHERE s.asset_id=v.asset_id AND s.source_id='local'))")
         if scope:
             kind,value=scope
-            if kind=='favorite':where.append('e.favorite=1')
+            if kind=='search':
+                where.append("EXISTS(SELECT 1 FROM search_hits h WHERE h.session_id=? AND (h.entry_id=e.id OR EXISTS(SELECT 1 FROM gallery_items original WHERE original.id=h.entry_id AND original.linked_asset_id=e.id)))");args.append(value)
+            elif kind=='favorite':where.append('e.favorite=1')
             elif kind=='person':where.append(f'? IN {people}');args.append(value)
             elif kind=='solo':where.append(f'EXISTS(SELECT 1 FROM persons p WHERE p.id IN {people} AND p.solo=1)')
             elif kind=='group':

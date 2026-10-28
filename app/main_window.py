@@ -3,7 +3,7 @@ import threading
 from pathlib import Path
 from PySide6.QtCore import Qt,QTimer,QByteArray,Signal,QPoint,QUrl
 from PySide6.QtGui import QShortcut,QKeySequence,QGuiApplication,QDesktopServices
-from PySide6.QtWidgets import (QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,QLineEdit,QComboBox,QFrame,QSplitter,QTreeWidget,QTreeWidgetItem,QSlider,QFileDialog,QMessageBox,QDialog,QMenu,QScrollArea,QSizePolicy)
+from PySide6.QtWidgets import (QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,QLineEdit,QComboBox,QFrame,QSplitter,QTreeWidget,QTreeWidgetItem,QSlider,QFileDialog,QMessageBox,QDialog,QMenu,QScrollArea,QSizePolicy,QCheckBox)
 from .gallery import GalleryModel,GalleryView
 from .dialogs import EntityDialog,LinkDialog,ImportDialog,SettingsDialog
 from .viewer import Viewer
@@ -37,6 +37,8 @@ class MainWindow(QMainWindow):
         except (ValueError,TypeError):self.analysis_filter=AnalysisFilter()
         if settings.values.get('sort')=='color_share' and not self.analysis_filter.color:settings.values['sort']='newest'
         self.analysis_dialog=None
+        self.search_session=None;self.search_flight=None
+        self.search_tasks=Tasks(self,1)
         from .upscale_service import UpscaleService
         self.upscale_service=UpscaleService(db,settings);self.upscale_service.recover();self.upscale_dialogs=[]
         self.library=LibraryRepository(db)
@@ -65,6 +67,13 @@ class MainWindow(QMainWindow):
         self.search.setPlaceholderText('그룹, 인물, 별칭, 파일명 검색  ·  Ctrl+K')
         self.search.setClearButtonEnabled(True)
         top.addWidget(self.search,1)
+        self.web_search_button=self.button('인터넷 검색',self.start_internet_search);top.addWidget(self.web_search_button)
+        self.search.returnPressed.connect(self.start_internet_search)
+        self.search_composition=QComboBox()
+        for label,value in [('전체 구도',None),('얼굴','face_close'),('얼굴·어깨','face_shoulders'),('상반신','upper_body'),('허리 위','waist_up'),('무릎 위','knees_up'),('전신','full_body')]:self.search_composition.addItem(label,value)
+        top.addWidget(self.search_composition)
+        self.search_unknown=QCheckBox('미확정 포함');self.search_unknown.setChecked(True);top.addWidget(self.search_unknown)
+        self.next_search=self.button('더 검색',self.next_internet_page);top.addWidget(self.next_search);self.next_search.setEnabled(False)
         self.analysis_toggle=self.button('필터 · 분석',self.toggle_analysis)
         top.addWidget(self.analysis_toggle)
         self.info_toggle=self.button('정보 패널',self.toggle_info)
@@ -73,6 +82,10 @@ class MainWindow(QMainWindow):
         top.addWidget(self.button('온라인',self.open_online))
         top.addWidget(self.button('설정',self.open_settings))
         outer.addWidget(toolbar)
+        search_controls=QWidget();search_row=QHBoxLayout(search_controls);search_row.setContentsMargins(20,4,20,4)
+        for widget in (self.search_composition,self.search_unknown,self.next_search):
+            top.removeWidget(widget);search_row.addWidget(widget)
+        search_row.addStretch();outer.addWidget(search_controls)
         self.splitter=QSplitter()
         outer.addWidget(self.splitter,1)
         self.sidebar=QWidget()
@@ -256,6 +269,8 @@ class MainWindow(QMainWindow):
         self.library_service=LibraryService(self.online_service)
         self.gallery.thumbnail_loader=self.library_service.preview
         self.remote_timer=QTimer(self);self.remote_timer.setSingleShot(True);self.remote_timer.setInterval(650);self.remote_timer.timeout.connect(self.check_remote_refresh)
+        from .search_service import SearchService
+        self.internet_search=SearchService(self.online_service)
         self.online_runner=OnlineRunner(self.online_service,settings,self)
         self.gallery.verticalScrollBar().valueChanged.connect(lambda _:self.online_runner.defer())
         self.online_runner.library_changed.connect(self.online_changed)
@@ -295,6 +310,7 @@ class MainWindow(QMainWindow):
 
     def apply_analysis_filters(self,filters):
         self.analysis_filter=filters;self.settings.values['analysis_filter']=filters.dictionary()
+        self.search_composition.setCurrentIndex(max(0,self.search_composition.findData(filters.composition)));self.search_unknown.setChecked(filters.include_unknown)
         self.analysis_toggle.setText('필터 · 적용 중' if filters.active else '필터 · 분석')
         if self.sort.currentData()=='color_share' and not filters.color:self.sort.setCurrentIndex(0)
         self.reload()
@@ -363,6 +379,8 @@ class MainWindow(QMainWindow):
                 parent.addChild(child)
             parent.setExpanded(True)
     def navigate(self,key):
+        self.search_session=None;self.next_search.setEnabled(False)
+        if self.search_flight:self.search_flight.cancelled.set()
         self.section=key
         self.scope=(key[:-1] if key=='groups' else key,None) if key in ('favorite','solo','groups','local') else None
         for k,b in self.nav.items():b.setChecked(k==key)
@@ -378,6 +396,8 @@ class MainWindow(QMainWindow):
             item=self.members_layout.takeAt(0)
             if item.widget():item.widget().deleteLater()
     def select_entity(self,item,column):
+        self.search_session=None;self.next_search.setEnabled(False)
+        if self.search_flight:self.search_flight.cancelled.set()
         data=item.data(0,Qt.ItemDataRole.UserRole)
         if not data:return
         kind,entity=data
@@ -393,6 +413,8 @@ class MainWindow(QMainWindow):
             self.members_layout.addStretch()
         self.reload()
     def select_person(self,p):
+        self.search_session=None;self.next_search.setEnabled(False)
+        if self.search_flight:self.search_flight.cancelled.set()
         self.scope=('person',p['id'])
         self.heading.setText(p['name'])
         self.subtitle.setText('직접 연결한 인물 사진')
@@ -412,7 +434,7 @@ class MainWindow(QMainWindow):
         if self.analysis_dialog is not None and self.analysis_dialog.isVisible():self.analysis_dialog.set_entry(None)
         self.empty.setText('조건에 맞는 사진이 없습니다\n\n색상/구도 분석 완료와 권한을 확인하거나 미분석 포함·필터 초기화를 사용하세요.' if self.analysis_filter.active else '아직 사진이 없습니다\n\n사진을 가져오거나 그룹과 인물을 먼저 등록해 보세요.')
         self.model.db=LibraryRepository(self.db,self.library_mode.currentData(),self.analysis_filter)
-        self.model.reload(self.scope,self.search.text(),self.sort.currentData(),source_filter=self.selected_source_filter())
+        self.model.reload(self.scope,'' if self.scope and self.scope[0]=='search' else self.search.text(),self.sort.currentData(),source_filter=self.selected_source_filter())
     def loaded(self,total):
         if self.bookmark is not None and not self.model.loading:
             identity,y_offset,selected_id=self.bookmark
@@ -436,6 +458,33 @@ class MainWindow(QMainWindow):
         current=self.gallery.currentIndex()
         if current.isValid() and self.model.row_at(current.row(),request=False):
             self.selection_changed(current)
+    def start_internet_search(self):
+        from dataclasses import replace
+        try:
+            filters=replace(self.analysis_filter,composition=self.search_composition.currentData(),include_unknown=self.search_unknown.isChecked())
+            session=self.internet_search.start(self.search.text(),filters)
+        except ValueError as error:self.statusBar().showMessage(str(error));return
+        if self.search_flight:self.search_flight.cancelled.set()
+        self.search_session=session;self.analysis_filter=filters;self.scope=('search',session);self.section='search'
+        self.library_mode.setCurrentIndex(self.library_mode.findData('all'))
+        self.heading.setText('온라인 검색 · '+self.search.text().strip());self.subtitle.setText('출처 검색 후보 · 인물/구도/색상 미확정은 일치로 간주하지 않습니다.')
+        self.reload();self.next_internet_page()
+
+    def next_internet_page(self):
+        if not self.search_session or (self.search_flight and not self.search_flight.cancelled.is_set()):return
+        session=self.search_session;self.next_search.setEnabled(False);self.sync_label.setText('검색 중')
+        def done(result):
+            self.search_flight=None
+            if self.search_session!=session:return
+            self.reload(preserve=True);self.next_search.setEnabled(result['state']!='exhausted')
+            self.sync_label.setText('일부 출처 실패 · 다음 검색 가능' if result.get('error') else ('다음 결과 있음' if result['state']!='exhausted' else '검색 끝 · 다음 페이지 없음'))
+        def failed(message):
+            self.search_flight=None
+            if self.search_session!=session:return
+            self.sync_label.setText('검색 불가 · 확인 필요');self.next_search.setEnabled(True)
+            self.empty.setText('온라인 검색을 완료하지 못했습니다\n\n'+message);self.statusBar().showMessage(message,20000)
+        self.search_flight=self.search_tasks.submit(lambda cancel:self.internet_search.page(session,cancel),done,failed,key='internet-search')
+
     def search_changed(self):
         self.refresh_entities()
         self.reload()
@@ -681,6 +730,7 @@ class MainWindow(QMainWindow):
         if self.import_job:
             self.import_cancel.set()
             self.statusBar().showMessage('현재 파일 작업을 마친 뒤 종료합니다.')
+        self.search_tasks.stop()
         self.search_timer.stop()
         self.remote_timer.stop()
         self.online_runner.stop()

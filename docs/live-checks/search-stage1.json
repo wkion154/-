@@ -1,0 +1,34 @@
+{
+  "provider": "Wikimedia Commons",
+  "results": [
+    {
+      "query": "Jang Wonyoung",
+      "kind": "person",
+      "state": "blocked",
+      "reason": "네트워크 연결을 확인하세요: <urlopen error Tunnel connection failed: 403 Forbidden>"
+    },
+    {
+      "query": "aespa",
+      "kind": "group",
+      "state": "not_run",
+      "reason": "Previous request blocked; no repeated requests under unchanged policy."
+    },
+    {
+      "query": "IU singer",
+      "kind": "solo",
+      "state": "not_run",
+      "reason": "Previous request blocked; no repeated requests under unchanged policy."
+    }
+  ],
+  "stage1_complete": false,
+  "historical_probe_only": true,
+  "wikimedia_excluded_by_user": true,
+  "current_candidate_probe": {
+    "source": "Kpopping",
+    "url": "https://kpopping.com/robots.txt",
+    "state": "blocked",
+    "http_status": 403,
+    "policy_verified": false,
+    "image_search_verified": false
+  }
+}
