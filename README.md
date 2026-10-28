@@ -1,5 +1,7 @@
 ## 최신 Windows 다운로드 · 검색 연결 실험판
 
+**Windows 보고서의 미리보기 차단 수정:** [검색 출처]에 **사이트 제공 파일 다운로드·미리보기** 선택지를 추가했습니다. 파일 다운로드 이용 조건을 확인한 경우 이 옵션을 켜고 새로 검색하세요. 차단된 이미지 변환 경로 대신 사이트가 실제 제공한 CDN 주소를 사용하며, CDN 정책과 기존 사진별 거부 설정을 유지합니다. 자동 영구 보관·분석·AI는 실행하지 않습니다. 전체 검사 225개 통과·24개 건너뜀. 실제 Windows 사진 표시는 수정본에서 추가 확인이 필요합니다.
+
 [ZIP 다운로드](https://github.com/wkion154/-/raw/refs/heads/k-idol-archive/releases/K-IDOL-ARCHIVE_Search_Stage1_Experimental.zip)
 
 전체를 새 폴더에 압축 해제하고 `START_WINDOWS.bat`를 실행하세요. **Python 3.12와 Edge 또는 Chrome이 필요한 소스 실행판**이며 EXE 설치판은 아닙니다. 기존 데이터는 삭제하지 마세요.

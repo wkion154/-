@@ -261,7 +261,22 @@ class WebService:
         # Do not turn display permission into permission to fetch an unknown original.
         if not item['cache_path']:
             if item['role']!='thumbnail':raise RemoteError('검사된 이미지가 없습니다. 원본 임시 검사 권한도 별도로 필요합니다.')
-            self.probe(identity,cancelled,operation='thumbnail')
+            from .provided_files import source_url,resolve
+            provided=source_url(item)
+            if provided and self.settings.values.get('kpopping_provided_preview') is True:
+                # Explicit opt-in plus both source/item download grants. The CDN
+                # policy is checked independently; the blocked wrapper is not used.
+                version=resolve(self,identity,cancelled)
+                self.repo.require(item['source_id'],'thumbnail','web:'+identity)
+                result=decode_preview(version['path'],512)
+                self.repo.require(item['source_id'],'original_download','web:'+identity)
+                self.repo.require(item['source_id'],'thumbnail','web:'+identity)
+                return result
+            try:self.probe(identity,cancelled,operation='thumbnail')
+            except RemoteError as error:
+                if provided and error.blocked:
+                    raise RemoteError('사이트의 미리보기 변환 경로가 차단됐습니다. 검색 출처에서 Kpopping 사이트 제공 파일 다운로드·미리보기를 선택한 뒤 새로 검색하세요. 파일 다운로드 권한을 확인한 경우에만 사용하세요.',blocked=True) from error
+                raise
             item=self.repo.image(identity)
         self.repo.require(item['source_id'],'thumbnail','web:'+identity)
         if file_hash(Path(item['cache_path']))!=item['sha256']:raise RemoteError('검사 캐시가 변경되었습니다.')

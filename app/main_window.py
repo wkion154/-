@@ -473,7 +473,7 @@ class MainWindow(QMainWindow):
         from .providers.kpopping_browser import KpoppingBrowserProvider
         from .providers.flickr_feed import FlickrFeedProvider
         dialog=QDialog(self);dialog.setWindowTitle('검색 출처 · 실험');form=QFormLayout(dialog)
-        note=QLabel('출처별 공개 검색·미리보기 연결입니다. 실제 다중 출처 동작은 아직 검증되지 않았습니다.\nKpopping: Windows Edge/Chrome 필요. 장원영 목록 경로만 사용자 관측으로 확인했습니다.\nFlickr: API 키 없는 공개 태그 피드, 검색어별 최근 최대 20개. 전체 이미지 검색·과거 페이지 탐색은 지원하지 않습니다.\n검색 결과의 인물·구도·원본은 미확정이며 원본 다운로드·분석·AI 권한을 부여하지 않습니다.');note.setWordWrap(True);form.addRow(note)
+        note=QLabel('출처별 공개 검색·미리보기 연결입니다. 실제 다중 출처 동작은 아직 검증되지 않았습니다.\nKpopping: Windows Edge/Chrome 필요. 장원영 목록 경로만 사용자 관측으로 확인했습니다.\nFlickr: API 키 없는 공개 태그 피드, 검색어별 최근 최대 20개. 전체 이미지 검색·과거 페이지 탐색은 지원하지 않습니다.\n검색 결과의 인물·구도·원본은 미확정입니다. 기본 연결은 파일 다운로드·분석·AI를 허용하지 않습니다. 아래 사이트 제공 파일 옵션을 별도로 선택하면 파일 다운로드를 허용합니다.');note.setWordWrap(True);form.addRow(note)
         fields=[]
         for provider_type,key,label in ((KpoppingBrowserProvider,'kpopping_browser_enabled','Kpopping 브라우저'),(FlickrFeedProvider,'flickr_feed_enabled','Flickr 공개 태그 피드')):
             consent=QCheckBox(label+' · 이용 조건을 확인한 검색·미리보기만 활성화')
@@ -482,9 +482,14 @@ class MainWindow(QMainWindow):
             existing=self.internet_search.providers.get(provider_type.name)
             if existing:reference.setText(self.online_service.web.repo.permissions(existing.name)['metadata_search']['evidence'].get('reference',''))
             form.addRow('확인 근거',reference);fields.append((provider_type,key,consent,reference))
+        files_preview=QCheckBox('Kpopping · 사이트 제공 파일 다운로드·미리보기 (검색 후보에 적용)')
+        files_preview.setChecked(self.settings.values.get('kpopping_provided_preview') is True)
+        files_preview.setToolTip('파일 다운로드 이용 조건을 확인한 경우에만 선택하세요. 출처와 새 검색 후보의 파일 다운로드를 허용하며, 기존 사진별 거부는 유지합니다. 영구 보관·분석·AI는 실행하지 않습니다.')
+        form.addRow(files_preview)
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Save|QDialogButtonBox.StandardButton.Cancel);buttons.accepted.connect(dialog.accept);buttons.rejected.connect(dialog.reject);form.addRow(buttons)
         if dialog.exec()!=QDialog.DialogCode.Accepted:return
         if any(consent.isChecked() and not reference.text().strip() for _,_,consent,reference in fields):self.statusBar().showMessage('활성화할 출처별 이용 조건 확인 근거가 필요합니다.');return
+        if files_preview.isChecked() and not fields[0][2].isChecked():self.statusBar().showMessage('사이트 제공 파일 미리보기는 Kpopping 검색 연결과 함께 사용하세요.');return
         if self.search_flight:self.search_flight.cancelled.set()
         self.search_session=None;self.search_auto_ready=False;self.next_search.setEnabled(False);self.search_scroll_timer.stop()
         for provider_type,key,consent,reference in fields:
@@ -492,10 +497,13 @@ class MainWindow(QMainWindow):
             if enabled:
                 evidence=dict(reference=reference.text().strip(),note='User-reviewed public metadata search and provided preview display only. Not verified original, identity or AI rights.')
                 self.online_service.web.repo.grant_many(provider.name,{'metadata_search':'allowed','thumbnail':'allowed'},evidence,enabled=True)
+                if provider.name=='kpopping-browser' and files_preview.isChecked():
+                    self.online_service.web.repo.grant(provider.name,'original_download','allowed',dict(reference=reference.text().strip(),note='User explicitly enabled downloads of site-provided files for search previews, including grants on new search candidates. No automatic permanent storage, analysis or AI.'))
                 self.internet_search.providers[provider.name]=provider
             else:
                 self.online_service.web.repo.enable(provider.name,False);self.internet_search.providers.pop(provider.name,None)
             self.settings.values[key]=enabled
+        self.settings.values['kpopping_provided_preview']=files_preview.isChecked()
         self.settings.save();self.refresh_source_filters()
         self.statusBar().showMessage('검색 출처를 저장했습니다. 검색어 입력 후 인터넷 검색을 누르세요.',10000)
 

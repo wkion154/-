@@ -36,6 +36,8 @@ class KpoppingBrowserProvider:
         repo.require(self.name,'metadata_search');repo.index_page(repo.page(page_id),parsed)
         rows=repo.images_for_urls(page_id,[item.url for item in parsed.candidates])
         allow_reviewed_previews(repo,self.name,rows)
+        if self.online.settings.values.get('kpopping_provided_preview') is True:
+            allow_reviewed_previews(repo,self.name,rows,operation='original_download')
         next_cursor=dict(batch=result['next_batch']) if result['next_batch'] is not None else None
         if next_cursor is not None and result.get('scroll_cursor'):next_cursor['scroll_cursor']=result['scroll_cursor']
         return ['web:'+row['id'] for row in rows],next_cursor
