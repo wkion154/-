@@ -12,6 +12,13 @@ from .providers.http import Cancelled,RemoteError,validate_url
 
 
 def source_url(item):
+    if item['source_id']=='dbkpop-search' and item['role']=='thumbnail':
+        from .providers.dbkpop import upload_url
+        try:evidence=json.loads(item['provenance'])
+        except (ValueError,TypeError):return None
+        if not isinstance(evidence,list):return None
+        urls={upload_url(row.get('provided_resource_url')) for row in evidence if isinstance(row,dict)}-{None}
+        return next(iter(urls)) if len(urls)==1 else None
     if item['source_id']!='kpopping-browser' or item['role']!='thumbnail':return None
     from .providers.kpopping import provided_file_url
     return provided_file_url(item['url'])

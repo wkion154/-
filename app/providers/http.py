@@ -44,18 +44,19 @@ class SafeRedirect(HTTPRedirectHandler):
 
 class HttpClient:
     """Proxy/CA settings inherited; serial API requests, no auth or TLS bypass."""
-    def __init__(self,interval=1.1,timeout=12,allowed_hosts=HOSTS,public_only=False,pacer=HOST_PACER):
+    def __init__(self,interval=1.1,timeout=12,allowed_hosts=HOSTS,public_only=False,pacer=HOST_PACER,headers=None):
         self.interval,self.timeout=interval,timeout
         self.allowed_hosts=frozenset(allowed_hosts)
         self.public_only=public_only
         self.pacer=pacer
+        self.headers=dict(headers or {})
         self.opener=build_opener(HTTPSHandler(context=ssl.create_default_context()),SafeRedirect(self.allowed_hosts,public_only,pacer,interval))
 
     def open(self,url,cancelled,accept='application/json'):
         validate_url(url,self.allowed_hosts,self.public_only)
         host=urlsplit(url).hostname
         self.pacer.wait(host,self.interval,cancelled)
-        request=Request(url,headers={'User-Agent':'K-IDOL-ARCHIVE/0.7.4 (desktop photo archive)', 'Accept':accept})
+        request=Request(url,headers={**self.headers,'User-Agent':'K-IDOL-ARCHIVE/0.7.4 (desktop photo archive)', 'Accept':accept})
         request.archive_cancelled=cancelled
         try:
             return self.opener.open(request,timeout=self.timeout)

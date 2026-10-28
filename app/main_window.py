@@ -468,19 +468,40 @@ class MainWindow(QMainWindow):
         current=self.gallery.currentIndex()
         if current.isValid() and self.model.row_at(current.row(),request=False):
             self.selection_changed(current)
+    def configure_naver_credentials(self):
+        from PySide6.QtWidgets import QFormLayout,QDialogButtonBox
+        from .naver_credentials import save
+        dialog=QDialog(self);dialog.setWindowTitle('네이버 이미지 검색 API 연결');form=QFormLayout(dialog)
+        note=QLabel('네이버 개발자센터에서 애플리케이션을 등록하고 검색 API를 선택해 발급받으세요.\n발급 정보는 이 Windows 계정으로 암호화해 로컬에 저장하며 보고서에 넣지 않습니다.\n<a href="https://developers.naver.com/apps/#/register">네이버 애플리케이션 등록 열기</a>')
+        note.setOpenExternalLinks(True);note.setWordWrap(True);form.addRow(note)
+        client_id=QLineEdit();secret=QLineEdit();secret.setEchoMode(QLineEdit.EchoMode.Password)
+        form.addRow('Client ID',client_id);form.addRow('Client Secret',secret)
+        buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Save|QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept);buttons.rejected.connect(dialog.reject);form.addRow(buttons)
+        if dialog.exec()!=QDialog.DialogCode.Accepted:return
+        try:save(self.settings.root,client_id.text(),secret.text())
+        except (RuntimeError,ValueError,OSError) as error:self.statusBar().showMessage(str(error),15000);return
+        self.statusBar().showMessage('네이버 API 발급 정보를 저장했습니다. 검색 출처에서 네이버 연결을 켜세요.',15000)
+
     def configure_browser_search(self):
         from PySide6.QtWidgets import QFormLayout,QDialogButtonBox
         from .providers.kpopping_browser import KpoppingBrowserProvider
         from .providers.flickr_feed import FlickrFeedProvider
+        from .providers.dbkpop import DBKpopProvider
+        from .providers.naver_images import NaverImageProvider
         dialog=QDialog(self);dialog.setWindowTitle('검색 출처 · 실험');form=QFormLayout(dialog)
-        note=QLabel('출처별 공개 검색·미리보기 연결입니다. 실제 다중 출처 동작은 아직 검증되지 않았습니다.\nKpopping: Windows Edge/Chrome 필요. 장원영 목록 경로만 사용자 관측으로 확인했습니다.\nFlickr: API 키 없는 공개 태그 피드, 검색어별 최근 최대 20개. 전체 이미지 검색·과거 페이지 탐색은 지원하지 않습니다.\n검색 결과의 인물·구도·원본은 미확정입니다. 기본 연결은 파일 다운로드·분석·AI를 허용하지 않습니다. 아래 사이트 제공 파일 옵션을 별도로 선택하면 파일 다운로드를 허용합니다.');note.setWordWrap(True);form.addRow(note)
+        note=QLabel('출처별 공개 검색·미리보기 연결입니다. 실제 다중 출처 동작은 아직 검증되지 않았습니다.\nKpopping: Windows Edge/Chrome 필요. 장원영 목록 경로만 사용자 관측으로 확인했습니다.\n네이버: 발급 정보 입력 후 여러 사이트의 이미지 검색·미리보기를 연결합니다.\nFlickr: 공개 피드는 현재 robots 정책에서 차단됩니다. 연결 성공으로 간주하지 않습니다.\n검색 결과의 인물·구도·원본은 미확정입니다. 기본 연결은 파일 다운로드·분석·AI를 허용하지 않습니다. 아래 사이트 제공 파일 옵션을 별도로 선택하면 파일 다운로드를 허용합니다.');note.setWordWrap(True);form.addRow(note)
         fields=[]
-        for provider_type,key,label in ((KpoppingBrowserProvider,'kpopping_browser_enabled','Kpopping 브라우저'),(FlickrFeedProvider,'flickr_feed_enabled','Flickr 공개 태그 피드')):
+        form.addRow(QLabel('DBKpop: 별도 브라우저/API 키 없는 공개 게시물·사진 검색. 영문 이름과 등록된 별칭을 사용하세요.'))
+        form.addRow(self.button('네이버 API 발급 정보 입력',self.configure_naver_credentials))
+        for provider_type,key,label in ((KpoppingBrowserProvider,'kpopping_browser_enabled','Kpopping 브라우저'),(FlickrFeedProvider,'flickr_feed_enabled','Flickr 공개 태그 피드'),(DBKpopProvider,'dbkpop_search_enabled','DBKpop 공개 사진 검색'),(NaverImageProvider,'naver_search_enabled','네이버 공식 이미지 검색 API')):
             consent=QCheckBox(label+' · 이용 조건을 확인한 검색·미리보기만 활성화')
             consent.setChecked(bool(self.settings.values.get(key,False)));form.addRow(consent)
             reference=QLineEdit();reference.setPlaceholderText('확인한 이용 조건 URL 또는 문서 식별자')
             existing=self.internet_search.providers.get(provider_type.name)
             if existing:reference.setText(self.online_service.web.repo.permissions(existing.name)['metadata_search']['evidence'].get('reference',''))
+            elif provider_type is NaverImageProvider:reference.setText('https://developers.naver.com/docs/serviceapi/search/image/image.md')
+            elif provider_type is DBKpopProvider:reference.setText('https://dbkpop.com/')
             form.addRow('확인 근거',reference);fields.append((provider_type,key,consent,reference))
         files_preview=QCheckBox('Kpopping · 사이트 제공 파일 다운로드·미리보기 (검색 후보에 적용)')
         files_preview.setChecked(self.settings.values.get('kpopping_provided_preview') is True)
@@ -494,6 +515,10 @@ class MainWindow(QMainWindow):
         if dialog.exec()!=QDialog.DialogCode.Accepted:return
         if any(consent.isChecked() and not reference.text().strip() for _,_,consent,reference in fields):self.statusBar().showMessage('활성화할 출처별 이용 조건 확인 근거가 필요합니다.');return
         if files_preview.isChecked() and not fields[0][2].isChecked():self.statusBar().showMessage('사이트 제공 파일 미리보기는 Kpopping 검색 연결과 함께 사용하세요.');return
+        if fields[-1][2].isChecked():
+            from .naver_credentials import load
+            try:load(self.settings.root)
+            except (RuntimeError,ValueError) as error:self.statusBar().showMessage(str(error),15000);return
         if self.search_flight:self.search_flight.cancelled.set()
         self.search_session=None;self.search_auto_ready=False;self.next_search.setEnabled(False);self.search_scroll_timer.stop()
         for provider_type,key,consent,reference in fields:
@@ -651,7 +676,9 @@ class MainWindow(QMainWindow):
         self.info_name.setText(row['name'])
         self.fav_button.setText('★ 즐겨찾기 해제' if row['favorite'] else '☆ 즐겨찾기')
         for b in (self.fav_button,self.associate_button,self.relink_button,self.related_button):b.setEnabled(True)
-        self.preserve_button.setEnabled(remote(row));self.source_button.setEnabled(bool(row.get('page_url')))
+        naver=row.get('source_id')=='naver-image-search'
+        self.preserve_button.setEnabled(remote(row) and not naver);self.source_button.setEnabled(bool(row.get('page_url')))
+        self.source_button.setText('검색 결과 파일 링크 열기' if naver else '출처 페이지 열기')
         self.relink_button.setEnabled(not remote(row));self.related_button.setEnabled(not remote(row));self.upscale_button.setEnabled(not remote(row))
         if remote(row):
             self.info_text.setText('출처와 이용 조건을 확인하는 중…')
@@ -660,6 +687,8 @@ class MainWindow(QMainWindow):
                 entry,people,groups=result
                 measured=f"캐시 실측 {entry['width']:,} × {entry['height']:,}" if entry['width'] and entry['height'] else f"미실측 · 제공처 선언 {entry['provided_width'] or '?'} × {entry['provided_height'] or '?'}"
                 self.info_text.setText('온라인 후보 · 영구 보관 전\n'+measured+'\n\n등장 확인: '+(', '.join(p['name'] for p in people) or '미확인')+'\n그룹 연결: '+(', '.join(g['name'] for g in groups) or '미연결')+'\n\n'+entry['page_url']+'\n'+entry['image_url']+'\n\n보기 캐시와 영구 보관은 별개입니다. 제공 파일 주소와 출처·사진별 다운로드 권한을 확인한 뒤 파일을 보관합니다. 미리보기만 있으면 원본으로 보관하지 않습니다.')
+                if entry.get('source_id')=='naver-image-search':
+                    self.info_text.setText(self.info_text.text()+'\n\n네이버: 여러 사이트의 검색 후보와 미리보기를 표시합니다. 각 사이트 파일의 앱 내 원본 보관은 아직 지원하지 않습니다. 파일 링크는 브라우저에서 확인할 수 있습니다.')
             self.meta_tasks.submit(lambda _:self.library.details(row['id']),done,self.error,key='remote-details')
             return
         people,groups=self.db.associations(row['id'])
@@ -752,6 +781,9 @@ class MainWindow(QMainWindow):
     def open_selected_source(self):
         if not self.selected:return
         url=self.selected.get('page_url','')
+        if self.selected.get('source_id')=='naver-image-search':
+            from .providers.naver_images import linked_file
+            url=linked_file(self.online_service.web.repo.image(self.selected['ref_id'])) or url
         if clean_url(url,url):QDesktopServices.openUrl(QUrl(url))
 
     def open_upscale(self,identity=None,parent=None):

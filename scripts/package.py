@@ -16,8 +16,8 @@ if args.windows:
 else:
     source=root
     destination=output/f'K-IDOL-ARCHIVE_v{__version__}_Source.zip'
-    excluded={'.venv','.git','dist','build','__pycache__','.pytest_cache'}
-    files=[p for p in source.rglob('*') if p.is_file() and not excluded.intersection(p.relative_to(source).parts)]
+    excluded={'.venv','.git','dist','build','__pycache__','.pytest_cache','credentials'}
+    files=[p for p in source.rglob('*') if p.is_file() and p.suffix.lower()!='.dpapi' and not excluded.intersection(p.relative_to(source).parts)]
 files=sorted(files)
 if any(p.is_symlink() for p in files):raise SystemExit('Release packaging refuses symlinks.')
 manifest=dict(version=__version__,kind='windows-base' if args.windows else 'source',files={})

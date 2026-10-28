@@ -1,0 +1,62 @@
+{
+  "checked_at": "2026-10-28T14:32:57.485881+00:00",
+  "query": "Leeseo",
+  "scope": "configured search and library pipeline; not GUI interaction",
+  "sources": [
+    "dbkpop-search"
+  ],
+  "pages": [
+    {
+      "added": 90,
+      "state": "ready"
+    },
+    {
+      "added": 53,
+      "state": "ready"
+    }
+  ],
+  "items": [
+    {
+      "entry_id": "web:f5362210b0214e10bc71c668999ca386",
+      "kind": "web",
+      "preview_decoded": true,
+      "file_verified": false,
+      "saved": false,
+      "errors": [],
+      "preview_width": 300,
+      "preview_height": 300
+    },
+    {
+      "entry_id": "web:ac47a6edaf7e4c0f9eeb6842d90e43bf",
+      "kind": "web",
+      "preview_decoded": true,
+      "file_verified": false,
+      "saved": false,
+      "errors": [],
+      "preview_width": 300,
+      "preview_height": 300
+    },
+    {
+      "entry_id": "web:e5a8d2a933a54dcbb7b0404c6bd8d9d2",
+      "kind": "web",
+      "preview_decoded": true,
+      "file_verified": false,
+      "saved": false,
+      "errors": [],
+      "preview_width": 300,
+      "preview_height": 300
+    }
+  ],
+  "errors": [],
+  "failure_details": [],
+  "file_check_requested": false,
+  "save_requested": false,
+  "provided_preview_enabled": false,
+  "search_browser_visible": false,
+  "permissions_changed": false,
+  "ui_verified": false,
+  "stage1_complete": false,
+  "checks_passed": true,
+  "gallery_results": 143,
+  "verification_scope": "Actual DBKpop API and thumbnail decode on Linux; not Windows/confirmed-person/original-save validation"
+}

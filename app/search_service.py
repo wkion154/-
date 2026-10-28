@@ -15,6 +15,12 @@ class SearchService:
         if providers is None:
             from .providers.page_search import PageSearchProvider
             providers=[]
+            if online.settings.values.get('naver_search_enabled',False):
+                from .providers.naver_images import NaverImageProvider
+                providers.append(NaverImageProvider(online))
+            if online.settings.values.get('dbkpop_search_enabled',False):
+                from .providers.dbkpop import DBKpopProvider
+                providers.append(DBKpopProvider(online))
             if online.settings.values.get('flickr_feed_enabled',False):
                 from .providers.flickr_feed import FlickrFeedProvider
                 providers.append(FlickrFeedProvider(online))

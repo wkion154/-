@@ -3,8 +3,8 @@ import hashlib,json,sys,zipfile
 from pathlib import Path
 root=Path(__file__).resolve().parents[1];sys.path.insert(0,str(root))
 from verify_package import verify
-excluded={'.git','.venv','dist','build','releases','__pycache__','.pytest_cache'}
-files=sorted(p for p in root.rglob('*') if p.is_file() and not excluded.intersection(p.relative_to(root).parts))
+excluded={'.git','.venv','dist','build','releases','__pycache__','.pytest_cache','credentials'}
+files=sorted(p for p in root.rglob('*') if p.is_file() and p.suffix.lower()!='.dpapi' and not excluded.intersection(p.relative_to(root).parts))
 target=root/'releases/K-IDOL-ARCHIVE_Search_Stage1_Experimental.zip';target.parent.mkdir(exist_ok=True)
 manifest=dict(version='0.7.4-search-stage1-experimental',kind='windows-source-experimental',files={})
 with zipfile.ZipFile(target,'w',zipfile.ZIP_DEFLATED) as z:
