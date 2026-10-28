@@ -1,3 +1,5 @@
+**Windows 접속 확인 도구:** [진단 ZIP 다운로드](https://github.com/wkion154/-/raw/refs/heads/k-idol-archive/releases/K-IDOL-ARCHIVE_Windows_Search_Check.zip). 압축 해제 후 `START_CHECK.bat` 실행 → 이름 입력 → 브라우저 검색 결과 확인 → 생성된 `search-report.json`을 대화에 첨부하세요. Python 3.12와 Edge/Chrome이 필요합니다. 진단 도구이며 완성된 검색 앱이 아닙니다. Windows 실기 미검증.
+
 > **온라인 검색 중심으로 방향 수정 중 — 1단계 미완료.** 실제 이름 검색 어댑터와 기존 갤러리 연결 코드를 추가했지만, 클라우드 프록시 403으로 실제 검색·썸네일·뷰어 통합 검증은 완료하지 못했습니다. [현재 상태](docs/search-realignment-stage1.md). 아래 v0.7.4 ZIP은 방향 수정 전 버전이며 이번 검색 변경을 포함하지 않습니다.
 
 # K-IDOL ARCHIVE · 7-4 개발판 · v0.7.4
