@@ -1,4 +1,7 @@
 # K-IDOL ARCHIVE · 7-4 개발판 · v0.7.4
+**다운로드:** [Windows 소스 실행용 ZIP](https://github.com/wkion154/-/raw/refs/heads/k-idol-archive/releases/K-IDOL-ARCHIVE_v0.7.4_Windows_Source.zip) · [SHA256](releases/K-IDOL-ARCHIVE_v0.7.4_Windows_Source.zip.sha256)
+
+ZIP을 전부 압축 해제하고 Python 3.12 설치 후 `START_WINDOWS.bat`를 실행하세요. 첫 실행은 의존성을 다운로드합니다. 이 파일은 EXE 설치판이 아니며 Windows 실행 검증이 남은 개발판입니다.
 
 Python/PySide6 기반 사진 아카이브입니다. 차콜 다크 UI, 그룹·인물 관리, 가상 갤러리, 고해상도 뷰어와 온라인 수집 구조를 제공합니다. Eagle/Lightroom의 라이브러리·감상 흐름을 참고한 독립 구현이며 상표·아이콘·사진·소스를 복제하지 않았습니다.
 
