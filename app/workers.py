@@ -33,15 +33,20 @@ class Tasks(QObject):
         self.pool = QThreadPool(self)
         self.pool.setMaxThreadCount(threads)
         self.jobs = set()
+        self.stopped = False
     def submit(self, function, done, error):
+        if self.stopped:
+            raise RuntimeError('종료된 작업 관리자입니다.')
         job = Job(function)
         self.jobs.add(job)
-        job.signals.done.connect(done)
-        job.signals.error.connect(error)
+        job.signals.done.connect(lambda value: done(value) if not self.stopped and not job.cancelled.is_set() else None)
+        job.signals.error.connect(lambda message: error(message) if not self.stopped and not job.cancelled.is_set() else None)
         job.signals.finished.connect(lambda: self.jobs.discard(job))
         self.pool.start(job)
         return job
     def stop(self):
+        if self.stopped:return
+        self.stopped = True
         for job in self.jobs:
             job.cancelled.set()
         self.pool.clear()

@@ -1,4 +1,4 @@
-"""Capability contracts for later stages. No online or AI work is enabled."""
+"""Capability contracts for later stages. Online adapters declare capabilities; AI components remain inactive."""
 from dataclasses import dataclass
 from typing import Protocol, Iterable
 
@@ -12,7 +12,7 @@ class ProviderPolicy:
 
 class Provider(Protocol):
     policy: ProviderPolicy
-    def discover(self, cursor: str | None) -> Iterable[dict]: ...
+    def discover(self, cursor: str | None, cancelled) -> tuple[list[dict], str | None]: ...
 
 class Analyzer(Protocol):
     name: str

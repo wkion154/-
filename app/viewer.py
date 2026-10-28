@@ -347,6 +347,9 @@ class Viewer(QDialog):
         self.prefetch_tasks.stop()
         self.prefetch_jobs.clear()
         self.cache.clear()
+        self.canvas.scene().clear()
+        self.canvas.item=None
+        self.displayed_id=None
 
     def done(self,result):
         self.shutdown()

@@ -37,3 +37,12 @@ QGroupBox {border:1px solid #30323b;border-radius:6px;margin-top:12px;padding:12
 QGroupBox::title {subcontrol-origin:margin;left:12px;color:#a9a3c1;}
 QCheckBox {spacing:8px;}
 '''
+
+STYLE += """
+QTabWidget::pane {border:1px solid #2b2d36;border-radius:6px;}
+QTabBar::tab {background:#191a20;color:#969baa;padding:10px 18px;border-bottom:2px solid transparent;}
+QTabBar::tab:selected {color:#ddd5ff;border-bottom:2px solid #b9afff;background:#24222f;}
+QTableView {background:#191a20;alternate-background-color:#1e1f26;border:0;gridline-color:#2b2d36;selection-background-color:#322e45;selection-color:#ece6ff;outline:none;}
+QHeaderView::section {background:#202128;color:#aeb2c0;border:0;border-bottom:1px solid #343640;padding:9px;}
+QTableCornerButton::section {background:#202128;border:0;}
+"""

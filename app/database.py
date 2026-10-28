@@ -30,14 +30,29 @@ class Database:
     def __init__(self, path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        from .online_schema import SCHEMA_V2
         with self.connect() as db:
-            db.execute('PRAGMA journal_mode=WAL')
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version > 1:
+            if version > 2:
                 raise RuntimeError('이 라이브러리는 더 최신 버전의 앱에서 생성되었습니다.')
-            db.executescript(SCHEMA)
+            # SQLite backup includes WAL contents; never replace an existing user backup.
+            if version == 1:
+                backup_path = self.path.with_name(self.path.name+'.v1-'+uuid.uuid4().hex[:12]+'.bak')
+                destination = sqlite3.connect(backup_path)
+                try:
+                    db.backup(destination)
+                finally:
+                    destination.close()
+            db.execute('PRAGMA journal_mode=WAL')
+            db.execute('BEGIN IMMEDIATE')
+            for statement in SCHEMA.split(';'):
+                if statement.strip():db.execute(statement)
             db.execute('INSERT OR IGNORE INTO schema_migrations VALUES(1,?)', (time.time(),))
-            db.execute('PRAGMA user_version=1')
+            if version < 2:
+                for statement in SCHEMA_V2.split(';'):
+                    if statement.strip():db.execute(statement)
+                db.execute('INSERT INTO schema_migrations VALUES(2,?)',(time.time(),))
+            db.execute('PRAGMA user_version=2')
 
     @contextmanager
     def connect(self):

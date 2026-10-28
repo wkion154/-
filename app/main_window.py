@@ -9,13 +9,18 @@ from .dialogs import EntityDialog,LinkDialog,ImportDialog,SettingsDialog
 from .viewer import Viewer
 from .workers import Tasks
 from .images import import_paths
+from .providers.http import HttpClient
+from .providers.wikimedia import WikimediaProvider
+from .online_service import OnlineService
+from .online_runner import OnlineRunner
+from .online_dialog import OnlineDialog
 
 class MainWindow(QMainWindow):
     import_progress = Signal(int)
     def __init__(self,db,settings):
         super().__init__()
         self.db,self.settings=db,settings
-        self.setWindowTitle('K-IDOL ARCHIVE · Alpha 2')
+        self.setWindowTitle('K-IDOL ARCHIVE · Alpha 3')
         self.resize(1440,920)
         self.setMinimumSize(820,560)
         self.scope=None
@@ -46,6 +51,7 @@ class MainWindow(QMainWindow):
         top.addWidget(self.search,1)
         self.info_toggle=self.button('정보 패널',self.toggle_info)
         top.addWidget(self.info_toggle)
+        top.addWidget(self.button('온라인',self.open_online))
         top.addWidget(self.button('설정',self.open_settings))
         outer.addWidget(toolbar)
         self.splitter=QSplitter()
@@ -80,7 +86,7 @@ class MainWindow(QMainWindow):
         self.tree.customContextMenuRequested.connect(self.entity_menu)
         side.addWidget(self.tree,1)
         side.addWidget(self.button('멤버 연결 관리',self.memberships))
-        label=QLabel('ALPHA 2\n로컬 우선 · 원본 보존')
+        label=QLabel('ALPHA 3\n로컬 우선 · 원본 보존')
         label.setObjectName('muted')
         side.addWidget(label)
         self.splitter.addWidget(self.sidebar)
@@ -94,6 +100,7 @@ class MainWindow(QMainWindow):
         head=QHBoxLayout()
         self.heading=QLabel('라이브러리')
         self.heading.setObjectName('heading')
+        self.heading.setTextFormat(Qt.TextFormat.PlainText)
         head.addWidget(self.heading,1)
         self.import_button=self.button('＋ 사진 가져오기',self.import_menu)
         self.import_button.setObjectName('primary')
@@ -152,10 +159,12 @@ class MainWindow(QMainWindow):
         info.addSpacing(16)
         self.info_name=QLabel('사진을 선택하세요')
         self.info_name.setObjectName('infoTitle')
+        self.info_name.setTextFormat(Qt.TextFormat.PlainText)
         self.info_name.setWordWrap(True)
         info.addWidget(self.info_name)
         self.info_text=QLabel('해상도, 보관 위치와 연결 정보를\n여기에서 확인할 수 있습니다.')
         self.info_text.setObjectName('muted')
+        self.info_text.setTextFormat(Qt.TextFormat.PlainText)
         self.info_text.setWordWrap(True)
         self.info_text.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         info.addWidget(self.info_text)
@@ -200,9 +209,25 @@ class MainWindow(QMainWindow):
         shortcut.activated.connect(self.search.setFocus)
         shortcut=QShortcut(QKeySequence('Ctrl+O'),self)
         shortcut.activated.connect(lambda:self.choose_import(False))
+        self.online_service=OnlineService(db,settings,WikimediaProvider(HttpClient()))
+        self.online_runner=OnlineRunner(self.online_service,settings,self)
+        self.online_runner.library_changed.connect(self.online_changed)
+        self.online_runner.error.connect(lambda message:self.statusBar().showMessage(message,12000))
         self.restore_window()
         self.refresh_entities()
         self.navigate('all')
+
+    def online_changed(self):
+        # Keep foreground browsing stable when new verified originals are registered.
+        self.refresh_entities()
+        self.reload(preserve=True)
+
+    def open_online(self):
+        dialog=OnlineDialog(self.online_service,self.online_runner,self.settings,self)
+        dialog.library_changed.connect(self.online_changed)
+        dialog.exec()
+        dialog.deleteLater()
+        self.online_changed()
 
     def button(self,text,action):
         b=QPushButton(text)
@@ -397,6 +422,9 @@ class MainWindow(QMainWindow):
         for b in (self.fav_button,self.associate_button,self.relink_button):b.setEnabled(True)
         people,groups=self.db.associations(row['id'])
         self.info_text.setText(f"{row['width']:,} × {row['height']:,}\n{row['format']}  ·  {row['size']/1024/1024:.2f} MB\n\n인물: {', '.join(p['name'] for p in people) or '미연결'}\n그룹: {', '.join(g['name'] for g in groups) or '미연결'}\n\n{'앱 관리 원본' if row['managed'] else '외부 파일 참조'}\n{row['path']}")
+        sources=self.online_service.repo.source_for_asset(row['id'])
+        if sources:
+            self.info_text.setText(self.info_text.text()+'\n\n'+'\n'.join(x['source_url']+'\n'+(x['license_name'] or '이용 조건 확인 필요')+'\n'+(x['attribution'] or '') for x in sources))
     def persist_favorite(self,identity,value,after=None):
         def done(_):
             for row in self.model.rows:
@@ -454,6 +482,7 @@ class MainWindow(QMainWindow):
             self.persist_favorite(identity,value)
         viewer.favorite_changed.connect(favorite)
         viewer.exec()
+        viewer.deleteLater()
         self.gallery.verticalScrollBar().setValue(scroll)
         self.gallery.viewport().update()
         self.selection_changed(index)
@@ -472,6 +501,7 @@ class MainWindow(QMainWindow):
             self.import_cancel.set()
             self.statusBar().showMessage('현재 파일 작업을 마친 뒤 종료합니다.')
         self.search_timer.stop()
+        self.online_runner.stop()
         self.gallery.close_tasks()
         self.model.close_tasks()
         self.tasks.stop()

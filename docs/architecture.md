@@ -1,3 +1,19 @@
+# Alpha 3 architecture update
+
+`online_schema.py` adds schema v2 transactionally. A version-1 SQLite backup is retained before migration. Local originals remain in `assets`; remote candidates live in `remote_images` and only verified user-requested originals are attached to local assets. Provider IDs and file-revision hashes identify remote revisions independently of local SHA256 deduplication.
+
+`providers/http.py` uses inherited proxy/CA trust, HTTPS hostname validation, guarded redirects, descriptive User-Agent, response bounds, request pacing and bounded read timeouts. `wikimedia.py` implements bounded discovery/entity/category API adapters and per-file metadata parsing. Provider policy is unreviewed until explicit current evidence is recorded; no live permission is implied by the existence of an adapter.
+
+`online_repository.py` owns external-ID bindings, source proposals, watched targets, remote indexes and a bounded-key persistent job queue. `online_service.py` handles one page/job, verified atomic downloads and source provenance. `online_runner.py` runs in a separate worker pool and only signals a main-library refresh for actual local changes. Source metadata updates therefore do not reset the foreground gallery every job.
+
+The online dialog pages at 200 remote rows, displays at most 300 review candidates, omits large raw source JSON from periodic snapshots, and decodes selected previews in workers. Raw metadata is retained in SQLite for audit. Original hashes, local paths and source license data are distinct. Categories do not assert depicted identity; person linking requires explicit confirmation.
+
+Conservative automatic registration requires referenced structured claims, an operational date window and a Commons category. Existing bindings and name conflicts never trigger name-only merges or overwrite local corrections. This narrow rule is fixture-tested, not live-validated. Complete automatic coverage, mixed-group roster reconciliation and reliable depicted-person filtering remain unverified/incomplete.
+
+Current external blocker: the enforced runtime permits no custom Wikimedia hosts. Seven required hosts are persisted in an editable environment draft but not active/published. Live API contracts, vocabulary and current policy review remain open release gates. Windows validation also remains open.
+
+Historical notes follow; schema-v1 statements below are superseded by this update.
+
 # Alpha 2 architecture update
 
 The existing isolated checkout is `/workspace/K-IDOL-ARCHIVE`. Do not create worktrees unless explicitly requested. No dependency, data-directory or persistent schema change was required for v0.2.0; the v1 library, IDs, associations and favorites remain compatible.

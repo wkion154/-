@@ -1,0 +1,17 @@
+{
+  "checked_at": "2026-10-28T02:29:30.527889+00:00",
+  "policy_reviewed": false,
+  "status": "not_run",
+  "documents": [],
+  "vocabulary_checked": false,
+  "reason": "Observed in this task: HTTPS proxy tunnel returned 403 for commons.wikimedia.org. Current enforced runtime custom allowlist is empty; seven Wikimedia hosts are saved only in the editable draft.",
+  "required_policy_urls": [
+    "https://foundation.wikimedia.org/wiki/Policy:Wikimedia_Foundation_Terms_of_Use",
+    "https://foundation.wikimedia.org/wiki/Policy:Wikimedia_Foundation_User-Agent_Policy",
+    "https://www.mediawiki.org/wiki/API:Etiquette",
+    "https://www.wikidata.org/wiki/Wikidata:Licensing",
+    "https://commons.wikimedia.org/wiki/Commons:Reusing_content_outside_Wikimedia",
+    "https://commons.wikimedia.org/robots.txt",
+    "https://www.wikidata.org/robots.txt"
+  ]
+}

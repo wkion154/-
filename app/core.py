@@ -14,7 +14,7 @@ def data_root():
 
 class Settings:
     defaults = dict(thumbnail_size=216, sort='newest', sidebar=True, info=True,
-                    viewer_mode='fit', theme='dark', cache_path='', storage_path='')
+                    viewer_mode='fit', online_enabled=True, auto_register=True, theme='dark', cache_path='', storage_path='')
 
     def __init__(self, root):
         self.root = Path(root)
@@ -27,7 +27,7 @@ class Settings:
                 self.values.update(value)
         except (OSError, ValueError):
             pass
-        for key in ('sidebar', 'info'):
+        for key in ('sidebar', 'info', 'online_enabled', 'auto_register'):
             if not isinstance(self.values[key], bool):
                 self.values[key] = self.defaults[key]
         size = self.values.get('thumbnail_size')
