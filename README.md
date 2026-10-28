@@ -1,10 +1,12 @@
-# K-IDOL ARCHIVE · 7-3 개발판 · v0.7.3
+# K-IDOL ARCHIVE · 7-4 개발판 · v0.7.4
 
 Python/PySide6 기반 사진 아카이브입니다. 차콜 다크 UI, 그룹·인물 관리, 가상 갤러리, 고해상도 뷰어와 온라인 수집 구조를 제공합니다. Eagle/Lightroom의 라이브러리·감상 흐름을 참고한 독립 구현이며 상표·아이콘·사진·소스를 복제하지 않았습니다.
 
-**7-3 개발판: 실제 FSRCNN 2배·4배 업스케일과 원본 좌표를 공유하는 3중 비교를 추가했습니다.** 참조 모드는 확인된 같은 인물의 얼굴 크기·방향·눈/입 상태를 검사하고 얼굴 내부만 제한적으로 보조하는 실험 기능입니다. 다양한 촬영 사진의 정체성 보존을 검증한 범용 인물 참조 모델은 아닙니다.
+**7-4 배포 검증 준비:** 격리된 Windows 빌드, EXE 자동 실행 검사, 배포 ZIP 무결성 검사와 수동 CI를 추가했습니다. Windows에서 실제 실행한 결과는 아직 없습니다.
 
-[이번 보고서](docs/stage-7-3-report.md) · [3중 비교](docs/upscale-compare-v0.7.3.png) · [슬라이더 비교](docs/upscale-slider-v0.7.3.png) · [7-2 색상 탐색](docs/stage-7-2-report.md)
+**7-3 기능: 실제 FSRCNN 2배·4배 업스케일과 원본 좌표를 공유하는 3중 비교를 추가했습니다.** 참조 모드는 확인된 같은 인물의 얼굴 크기·방향·눈/입 상태를 검사하고 얼굴 내부만 제한적으로 보조하는 실험 기능입니다. 다양한 촬영 사진의 정체성 보존을 검증한 범용 인물 참조 모델은 아닙니다.
+
+[7-4 검증 보고서](docs/stage-7-4-report.md) · [7-3 기능 보고서](docs/stage-7-3-report.md) · [3중 비교](docs/upscale-compare-v0.7.3.png) · [슬라이더 비교](docs/upscale-slider-v0.7.3.png) · [7-2 색상 탐색](docs/stage-7-2-report.md)
 
 사진 정보 패널 또는 뷰어에서 **AI 업스케일**을 실행합니다. 소스 환경에 `python -m pip install -r requirements-upscale.lock`로 선택 의존성을 설치하세요. 얼굴 참조는 `python -m pip install -r requirements-reference.lock`도 설치합니다. 작은 FSRCNN 가중치 2개와 라이선스를 동봉하므로 실행 시 모델을 내려받지 않습니다. 사진별 분석·AI 입력·결과 저장 권한을 각각 확인해야 합니다. 원격 후보는 먼저 원본 영구 보관과 출처 권한 검토가 필요합니다. 입력을 외부로 전송하지 않습니다.
 
@@ -103,3 +105,8 @@ python scripts/package.py
 ```
 
 Windows Python 3.12의 `build_windows.bat`는 테스트 → PyInstaller 폴더형 빌드 → 라이선스 수집 → ZIP/SHA256 생성 절차입니다. 예상 출력 `dist/K-IDOL-ARCHIVE_v0.7.1_Windows.zip`. **현재 Linux에서 Windows 실행 파일을 생성하거나 실기 검증하지 않았습니다.** 제공 결과물은 소스 ZIP입니다. 실제 사이트 검증과 Windows/AI 출시 조건은 [7-1 보고서](docs/stage-7-1-report.md)에 정리했습니다.
+
+
+## 배포 파일 확인
+
+`python scripts/verify_package.py dist/K-IDOL-ARCHIVE_v0.7.4_Source.zip`로 파일 목록과 해시를 검증합니다. Windows 기본 빌드는 `build_windows.bat`를 실행합니다. `build/windows-venv` 생성 환경을 재생성하며 사용자 `.venv`는 사용하지 않습니다. 기본 EXE는 AI 제외판입니다. 실행 검사와 Windows 실기 확인의 차이는 [7-4 보고서](docs/stage-7-4-report.md)에 정리했습니다.

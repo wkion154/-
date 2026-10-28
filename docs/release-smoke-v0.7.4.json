@@ -1,0 +1,12 @@
+{
+  "version": "0.7.4",
+  "platform": "Linux",
+  "checks": {
+    "gallery_and_thumbnail": true,
+    "sqlite_integrity": true,
+    "favorite_persisted": true,
+    "settings_saved": true,
+    "offline": true
+  },
+  "success": true
+}

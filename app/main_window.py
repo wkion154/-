@@ -27,7 +27,7 @@ class MainWindow(QMainWindow):
     def __init__(self,db,settings):
         super().__init__()
         self.db,self.settings=db,settings
-        self.setWindowTitle('K-IDOL ARCHIVE · 7-3 개발판')
+        self.setWindowTitle('K-IDOL ARCHIVE · 7-4 개발판')
         self.resize(1440,920)
         self.setMinimumSize(820,560)
         self.scope=None
@@ -105,7 +105,7 @@ class MainWindow(QMainWindow):
         self.tree.customContextMenuRequested.connect(self.entity_menu)
         side.addWidget(self.tree,1)
         side.addWidget(self.button('멤버 연결 관리',self.memberships))
-        label=QLabel('STAGE 7-3\n로컬 우선 · 원본 보존')
+        label=QLabel('STAGE 7-4\n로컬 우선 · 원본 보존')
         label.setObjectName('muted')
         side.addWidget(label)
         self.splitter.addWidget(self.sidebar)

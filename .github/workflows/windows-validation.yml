@@ -1,0 +1,33 @@
+name: Windows base build and executable check
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-base:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build and check isolated base executable
+        shell: cmd
+        run: build_windows.bat
+      - name: Verify release archive
+        shell: pwsh
+        run: |
+          $archive = Get-ChildItem dist/*_Windows.zip | Select-Object -First 1
+          if (!$archive) { throw 'Missing release archive' }
+          build/windows-venv/Scripts/python scripts/verify_package.py $archive.FullName
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-base-validation
+          path: |
+            build/windows-tests.xml
+            build/windows-smoke.json
+            dist/*_Windows.zip
+            dist/*.sha256
