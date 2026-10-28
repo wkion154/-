@@ -27,7 +27,7 @@ class MainWindow(QMainWindow):
     def __init__(self,db,settings):
         super().__init__()
         self.db,self.settings=db,settings
-        self.setWindowTitle('K-IDOL ARCHIVE · 7-2 개발판')
+        self.setWindowTitle('K-IDOL ARCHIVE · 7-3 개발판')
         self.resize(1440,920)
         self.setMinimumSize(820,560)
         self.scope=None
@@ -37,6 +37,8 @@ class MainWindow(QMainWindow):
         except (ValueError,TypeError):self.analysis_filter=AnalysisFilter()
         if settings.values.get('sort')=='color_share' and not self.analysis_filter.color:settings.values['sort']='newest'
         self.analysis_dialog=None
+        from .upscale_service import UpscaleService
+        self.upscale_service=UpscaleService(db,settings);self.upscale_service.recover();self.upscale_dialogs=[]
         self.library=LibraryRepository(db)
         self.gallery_version=-1
         self.refresh_force=False
@@ -103,7 +105,7 @@ class MainWindow(QMainWindow):
         self.tree.customContextMenuRequested.connect(self.entity_menu)
         side.addWidget(self.tree,1)
         side.addWidget(self.button('멤버 연결 관리',self.memberships))
-        label=QLabel('STAGE 7-2\n로컬 우선 · 원본 보존')
+        label=QLabel('STAGE 7-3\n로컬 우선 · 원본 보존')
         label.setObjectName('muted')
         side.addWidget(label)
         self.splitter.addWidget(self.sidebar)
@@ -206,13 +208,14 @@ class MainWindow(QMainWindow):
         info.addWidget(self.associate_button)
         self.related_button=self.button('연관 사진 찾기',self.open_related)
         info.addWidget(self.related_button)
+        self.upscale_button=self.button('AI 업스케일 · 비교',self.open_upscale);info.addWidget(self.upscale_button)
         self.relink_button=self.button('원본 다시 연결',self.relink)
         info.addWidget(self.relink_button)
         self.preserve_button=self.button('원본 영구 보관',self.preserve_selected)
         self.source_button=self.button('출처 페이지 열기',self.open_selected_source)
         info.addWidget(self.preserve_button);info.addWidget(self.source_button)
         self.preserve_button.setEnabled(False);self.source_button.setEnabled(False)
-        for b in (self.fav_button,self.associate_button,self.relink_button,self.related_button):b.setEnabled(False)
+        for b in (self.fav_button,self.associate_button,self.relink_button,self.related_button,self.upscale_button):b.setEnabled(False)
         info.addStretch()
         label=QLabel('원본 파일은 변경하지 않습니다.\n등록일과 촬영일은 별도로 관리합니다.')
         label.setObjectName('muted')
@@ -404,7 +407,7 @@ class MainWindow(QMainWindow):
         self.selected=None
         self.info_name.setText('사진을 선택하세요')
         self.info_text.setText('사진을 선택하면 보관 상태와 출처 정보를 확인할 수 있습니다.')
-        for b in (self.fav_button,self.associate_button,self.relink_button,self.related_button):b.setEnabled(False)
+        for b in (self.fav_button,self.associate_button,self.relink_button,self.related_button,self.upscale_button):b.setEnabled(False)
         self.preserve_button.setEnabled(False);self.source_button.setEnabled(False)
         if self.analysis_dialog is not None and self.analysis_dialog.isVisible():self.analysis_dialog.set_entry(None)
         self.empty.setText('조건에 맞는 사진이 없습니다\n\n색상/구도 분석 완료와 권한을 확인하거나 미분석 포함·필터 초기화를 사용하세요.' if self.analysis_filter.active else '아직 사진이 없습니다\n\n사진을 가져오거나 그룹과 인물을 먼저 등록해 보세요.')
@@ -524,7 +527,7 @@ class MainWindow(QMainWindow):
         self.fav_button.setText('★ 즐겨찾기 해제' if row['favorite'] else '☆ 즐겨찾기')
         for b in (self.fav_button,self.associate_button,self.relink_button,self.related_button):b.setEnabled(True)
         self.preserve_button.setEnabled(remote(row));self.source_button.setEnabled(bool(row.get('page_url')))
-        self.relink_button.setEnabled(not remote(row));self.related_button.setEnabled(not remote(row))
+        self.relink_button.setEnabled(not remote(row));self.related_button.setEnabled(not remote(row));self.upscale_button.setEnabled(not remote(row))
         if remote(row):
             self.info_text.setText('출처와 이용 조건을 확인하는 중…')
             def done(result):
@@ -626,6 +629,16 @@ class MainWindow(QMainWindow):
         url=self.selected.get('page_url','')
         if clean_url(url,url):QDesktopServices.openUrl(QUrl(url))
 
+    def open_upscale(self,identity=None,parent=None):
+        if not isinstance(identity,str):identity=self.selected['id'] if self.selected else None
+        if not identity:return
+        if remote(identity):self.error('온라인 사진은 원본 영구 보관과 권한 확인 후 복원할 수 있습니다.');return
+        from .upscale_dialog import UpscaleDialog
+        for dialog in self.upscale_dialogs:
+            if not dialog.closed and dialog.identity==identity:dialog.show();dialog.raise_();return
+        dialog=UpscaleDialog(self.upscale_service,identity,parent or self)
+        self.upscale_dialogs.append(dialog);dialog.show()
+
     def open_viewer(self,index):
         if not index.isValid() or self.model.row_at(index.row()) is None:return
         scroll=self.gallery.verticalScrollBar().value()
@@ -639,6 +652,7 @@ class MainWindow(QMainWindow):
             self.persist_favorite(identity,value)
         viewer.favorite_changed.connect(favorite)
         viewer.related_requested.connect(self.open_related)
+        viewer.upscale_requested.connect(lambda identity:self.open_upscale(identity,viewer))
         with self.online_runner.foreground():viewer.exec()
         viewer.deleteLater()
         self.gallery.verticalScrollBar().setValue(scroll)
@@ -655,6 +669,12 @@ class MainWindow(QMainWindow):
         sizes=self.settings.values.get('panels')
         if isinstance(sizes,list) and len(sizes)==3 and all(isinstance(n,int) and n>=0 for n in sizes):self.splitter.setSizes(sizes)
     def closeEvent(self,event):
+        if any(not d.closed and d.busy for d in self.upscale_dialogs):
+            for dialog in self.upscale_dialogs:
+                if not dialog.closed:dialog.close()
+            event.ignore();QTimer.singleShot(100,self.close);return
+        for dialog in self.upscale_dialogs:
+            if not dialog.closed:dialog.close()
         if self.analysis_dialog is not None and self.analysis_dialog.saving:
             self.statusBar().showMessage('분석 확인 기록을 저장한 뒤 종료합니다.');event.ignore();QTimer.singleShot(80,self.close);return
         if self.analysis_dialog is not None:self.analysis_dialog.shutdown()

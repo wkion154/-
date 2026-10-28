@@ -1,0 +1,2 @@
+# Install after requirements.lock. Includes pinned offline MediaPipe face models.
+-r requirements-analysis.lock

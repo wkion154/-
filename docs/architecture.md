@@ -115,3 +115,8 @@ Thumbnail version and source path/size/mtime signature invalidate persistent cac
 ## 7-2 분석 계층
 
 `image_analysis` 서비스는 권한·입력 해시를 검증하고 색상/선택 vision 결과를 원자적으로 게시한다. `analysis_schema` v7은 사진 해시 기반 결과, 영역별 색상 bin, Lab RTree, 수동 확인 및 이력 테이블을 추가한다. `analysis_filters`가 현재 권한과 hash/stale 상태를 포함한 공통 SQL을 생성하며 LibraryRepository의 count/page/locate에 같은 조건을 적용한다. `appearance`는 현재 허용된 저장 사진의 영역 색상 후보만 RelatedRepository에 제공한다. 자세한 제한과 측정은 stage-7-2-report.md 참고.
+
+
+## 7-3 복원과 비교
+
+`UpscaleService`는 extension_records에 작업/결과를 저장하고 사진별 현재 출처 권한·입력 해시·인물 연결을 검사한다. 별도 자식 프로세스의 `super_resolution` 모듈이 공식 FSRCNN을 타일 실행한다. 참조 실험은 오프라인 Face Mesh로 검증한 얼굴 내부의 제한적 휘도 디테일 보조이며 범용 인물 참조 모델이 아니다. `UpscaleDialog`는 전용 Tasks와 취소 이벤트를 사용하며 CompareCanvas는 하나의 원본 좌표 중심/확대 상태를 공유한다. 기본 의존성에는 OpenCV가 필요 없으며 선택 기능을 사용할 때만 설치한다. 구현 범위·한계·성능은 stage-7-3-report.md 참고.

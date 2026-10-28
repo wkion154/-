@@ -103,6 +103,7 @@ class Viewer(QDialog):
     favorite_changed = Signal(str, bool)
     image_ready = Signal(str)
     related_requested = Signal(str)
+    upscale_requested = Signal(str)
     MAX_RECORDS = 768
 
     def __init__(self, rows, position, parent=None, mode='fit', load_more=None,
@@ -151,7 +152,7 @@ class Viewer(QDialog):
                               ('−', lambda: self.canvas.zoom(1/1.2)), ('＋', lambda: self.canvas.zoom(1.2)),
                               ('화면 맞춤', lambda: self.canvas.fit()),
                               ('원본 픽셀', self.actual), ('전체화면', self.fullscreen),
-                              ('☆', self.favorite), ('미리보기', self.toggle_related_strip), ('연관 사진', self.related), ('닫기', self.close)]:
+                              ('☆', self.favorite), ('미리보기', self.toggle_related_strip), ('연관 사진', self.related), ('AI 업스케일',lambda:self.upscale_requested.emit(self.rows[self.position]['id'])), ('닫기', self.close)]:
             button = QPushButton(label)
             if label=='화면 맞춤':
                 button.setText('맞춤 ▾')
@@ -207,6 +208,7 @@ class Viewer(QDialog):
         elif self.related_strip:
             self.strip_remote_hidden=self.strip_remote_hidden or not self.related_strip.isHidden() or self.strip_auto_hidden
             self.related_strip.cancel();self.related_strip.seed=None;self.related_strip.list.clear();self.related_strip.hide();self.strip_auto_hidden=False
+        self.buttons['AI 업스케일'].setEnabled(row.get('kind','asset')=='asset')
         self.buttons['연관 사진'].setEnabled(row.get('kind','asset')=='asset')
         self.buttons['미리보기'].setEnabled(self.related_strip is not None and row.get('kind','asset')=='asset')
         self.title.setText(f"{self.base_index+self.position+1} / {self.total}   {row['name']}")
@@ -407,5 +409,12 @@ class Viewer(QDialog):
         super().done(result)
 
     def closeEvent(self,event):
+        from .upscale_dialog import UpscaleDialog
+        dialogs=self.findChildren(UpscaleDialog)
+        if any(d.busy and not d.closed for d in dialogs):
+            for dialog in dialogs:dialog.close()
+            event.ignore();QTimer.singleShot(100,self.close);return
+        for dialog in dialogs:
+            if not dialog.closed:dialog.close()
         self.shutdown()
         super().closeEvent(event)

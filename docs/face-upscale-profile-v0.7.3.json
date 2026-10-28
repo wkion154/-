@@ -1,0 +1,164 @@
+{
+  "scope": "NASA/scikit-image public-domain photo: 256px downsample and 512px source reference, actual face-mesh/FSRCNN execution. A same-photo registration test, not varied-pose/identity-preservation or K-pop accuracy evidence.",
+  "diagnostics": {
+    "cpu_ready": true,
+    "opencv": "4.11.0",
+    "cuda_devices": 0,
+    "cuda_targets": [],
+    "cuda_ready": false,
+    "reason": "CUDA DNN \uc2e4\ud589 \ud658\uacbd \uc5c6\uc74c \u00b7 CPU \uc0ac\uc6a9",
+    "vram_measured": false
+  },
+  "results": [
+    {
+      "mode": "general",
+      "scale": 2,
+      "total_seconds": 0.342,
+      "metrics": {
+        "peak_rss_mib": 111.4765625,
+        "width": 512,
+        "height": 512,
+        "roundtrip_mae": 1.4116109212239583,
+        "reference": {},
+        "elapsed_seconds": 0.147,
+        "device": "CPU",
+        "gpu_vram_mib": null,
+        "cuda_fallback_reason": null,
+        "generated_detail": true,
+        "identity_preservation_proven": false
+      }
+    },
+    {
+      "mode": "general",
+      "scale": 4,
+      "total_seconds": 0.585,
+      "metrics": {
+        "peak_rss_mib": 121.671875,
+        "width": 1024,
+        "height": 1024,
+        "roundtrip_mae": 1.8586527506510417,
+        "reference": {},
+        "elapsed_seconds": 0.36,
+        "device": "CPU",
+        "gpu_vram_mib": null,
+        "cuda_fallback_reason": null,
+        "generated_detail": true,
+        "identity_preservation_proven": false
+      }
+    },
+    {
+      "mode": "reference",
+      "scale": 2,
+      "total_seconds": 1.659,
+      "metrics": {
+        "peak_rss_mib": 224.01171875,
+        "width": 512,
+        "height": 512,
+        "roundtrip_mae": 1.4145100911458333,
+        "reference": {
+          "original": {
+            "eye_distance": 21.18970489501953,
+            "yaw": 0.0011332241265769826,
+            "pitch": 0.6633944545519027,
+            "mouth_open": 0.15916108751170618,
+            "mouth_width": 1.0403910776246796,
+            "left_eye": 0.15288825121688557,
+            "right_eye": 0.14861967784711977,
+            "mouth_offset": 0.0019087422683344752
+          },
+          "reference": {
+            "eye_distance": 42.65174102783203,
+            "yaw": -0.0035672112383101965,
+            "pitch": 0.6620647554427203,
+            "mouth_open": 0.1660965648734118,
+            "mouth_width": 1.038607364095442,
+            "left_eye": 0.15150465776541383,
+            "right_eye": 0.14707730765453722,
+            "mouth_offset": 0.007802283076904914
+          },
+          "landmark_rms": 0.00531340202935436,
+          "inlier_ratio": 1.0,
+          "rotation_degrees": -0.19171903909543378,
+          "scope": "face-interior-only",
+          "face_mask_pixels": 5428,
+          "face_mask_fraction": 0.0207061767578125,
+          "outside_mask_unchanged": true,
+          "correlation": 0.9488247696684736,
+          "gray_mae": 7.299189567565918,
+          "detail_energy_ratio": 1.7940158691126449,
+          "strength": 0.15,
+          "max_luma_delta": 6,
+          "result_landmark_rms": 0.016650799252316124,
+          "identity_verified": false,
+          "identity_preservation_proven": false
+        },
+        "elapsed_seconds": 1.383,
+        "device": "CPU",
+        "gpu_vram_mib": null,
+        "cuda_fallback_reason": null,
+        "generated_detail": true,
+        "identity_preservation_proven": false
+      }
+    },
+    {
+      "mode": "reference",
+      "scale": 4,
+      "total_seconds": 1.986,
+      "metrics": {
+        "peak_rss_mib": 273.01171875,
+        "width": 1024,
+        "height": 1024,
+        "roundtrip_mae": 1.862823486328125,
+        "reference": {
+          "original": {
+            "eye_distance": 21.18970489501953,
+            "yaw": 0.0011332241265769826,
+            "pitch": 0.6633944545519027,
+            "mouth_open": 0.15916108751170618,
+            "mouth_width": 1.0403910776246796,
+            "left_eye": 0.15288825121688557,
+            "right_eye": 0.14861967784711977,
+            "mouth_offset": 0.0019087422683344752
+          },
+          "reference": {
+            "eye_distance": 42.65174102783203,
+            "yaw": -0.0035672112383101965,
+            "pitch": 0.6620647554427203,
+            "mouth_open": 0.1660965648734118,
+            "mouth_width": 1.038607364095442,
+            "left_eye": 0.15150465776541383,
+            "right_eye": 0.14707730765453722,
+            "mouth_offset": 0.007802283076904914
+          },
+          "landmark_rms": 0.00531340202935436,
+          "inlier_ratio": 1.0,
+          "rotation_degrees": -0.19171903909543378,
+          "scope": "face-interior-only",
+          "face_mask_pixels": 21464,
+          "face_mask_fraction": 0.02046966552734375,
+          "outside_mask_unchanged": true,
+          "correlation": 0.911335253057623,
+          "gray_mae": 9.723211288452148,
+          "detail_energy_ratio": 2.04696628167743,
+          "strength": 0.15,
+          "max_luma_delta": 6,
+          "result_landmark_rms": 0.020347674825023754,
+          "identity_verified": false,
+          "identity_preservation_proven": false
+        },
+        "elapsed_seconds": 1.668,
+        "device": "CPU",
+        "gpu_vram_mib": null,
+        "cuda_fallback_reason": null,
+        "generated_detail": true,
+        "identity_preservation_proven": false
+      }
+    },
+    {
+      "mode": "reference-cache-hit",
+      "scale": 2,
+      "total_seconds": 0.041,
+      "reused": true
+    }
+  ]
+}

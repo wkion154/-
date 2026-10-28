@@ -1,0 +1,7 @@
+FSRCNN TensorFlow pretrained x2/x4 models
+Source: https://github.com/Saafke/FSRCNN_Tensorflow
+Revision: 6a4812c4ef1c4f5947d79beafa32a05a6eb4a94d
+Repository license: Apache License 2.0 (see LICENSE).
+Original model weights are unmodified. Integration, tiling and reference-assistance code added separately by K-IDOL ARCHIVE.
+FSRCNN: Chao Dong, Chen Change Loy, Xiaoou Tang, ECCV 2016.
+See docs/upscale-model-manifest.json and docs/upscale-dependencies/FSRCNN-UPSTREAM-README.md for provenance and limitations.

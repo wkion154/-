@@ -1,0 +1,47 @@
+{
+  "scope": "Linux CPU, owned 384x384 synthetic chart. Reference face modes measured separately. Actual FSRCNN inference. Not artist identity/face accuracy, GPU performance, Windows or typical photo quality evidence.",
+  "results": [
+    {
+      "mode": "general",
+      "scale": 2,
+      "total_seconds": 0.423,
+      "metrics": {
+        "peak_rss_mib": 126.6484375,
+        "width": 768,
+        "height": 768,
+        "roundtrip_mae": 1.2564855504918981,
+        "reference": {},
+        "elapsed_seconds": 0.225,
+        "device": "CPU",
+        "gpu_vram_mib": null,
+        "cuda_fallback_reason": null,
+        "generated_detail": true,
+        "identity_preservation_proven": false
+      }
+    },
+    {
+      "mode": "general",
+      "scale": 4,
+      "total_seconds": 0.584,
+      "metrics": {
+        "peak_rss_mib": 128.859375,
+        "width": 1536,
+        "height": 1536,
+        "roundtrip_mae": 1.3595716688368056,
+        "reference": {},
+        "elapsed_seconds": 0.415,
+        "device": "CPU",
+        "gpu_vram_mib": null,
+        "cuda_fallback_reason": null,
+        "generated_detail": true,
+        "identity_preservation_proven": false
+      }
+    },
+    {
+      "mode": "general-cache-hit",
+      "scale": 2,
+      "total_seconds": 0.012,
+      "reused": true
+    }
+  ]
+}

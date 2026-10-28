@@ -55,7 +55,7 @@ class HttpClient:
         validate_url(url,self.allowed_hosts,self.public_only)
         host=urlsplit(url).hostname
         self.pacer.wait(host,self.interval,cancelled)
-        request=Request(url,headers={'User-Agent':'K-IDOL-ARCHIVE/0.7.2 (desktop photo archive)', 'Accept':accept})
+        request=Request(url,headers={'User-Agent':'K-IDOL-ARCHIVE/0.7.3 (desktop photo archive)', 'Accept':accept})
         request.archive_cancelled=cancelled
         try:
             return self.opener.open(request,timeout=self.timeout)

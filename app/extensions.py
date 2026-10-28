@@ -1,4 +1,4 @@
-"""Capability contracts for later stages. Online adapters declare capabilities; AI components remain inactive."""
+"""Capability contracts for later stages. Online adapters declare capabilities; local AI implementations live in super_resolution/upscale_service."""
 from dataclasses import dataclass
 from typing import Protocol, Iterable
 

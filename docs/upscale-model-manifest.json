@@ -1,0 +1,42 @@
+{
+  "engine": "FSRCNN via OpenCV dnn_superres",
+  "runtime": "opencv-contrib-python==4.11.0.86; numpy==1.26.4",
+  "source": "https://github.com/Saafke/FSRCNN_Tensorflow",
+  "revision": "6a4812c4ef1c4f5947d79beafa32a05a6eb4a94d",
+  "source_license": "Apache-2.0 repository license; license and upstream README retained",
+  "weights_modified": false,
+  "verified_at": "2026-10-28",
+  "training_dataset_provenance": "Upstream README declares T91 and General100; underlying datasets not downloaded or independently licensed/audited by this task.",
+  "files": [
+    {
+      "name": "FSRCNN_x2.pb",
+      "scale": 2,
+      "bytes": 38973,
+      "sha256": "366b33f0084c7b3f2bf6724f0a2c77bca94fcec9d7b6d72389d330073b380d5c",
+      "url": "https://raw.githubusercontent.com/Saafke/FSRCNN_Tensorflow/6a4812c4ef1c4f5947d79beafa32a05a6eb4a94d/models/FSRCNN_x2.pb"
+    },
+    {
+      "name": "FSRCNN_x4.pb",
+      "scale": 4,
+      "bytes": 41661,
+      "sha256": "5c68d18db561aed8ead4ffedf1b897ea615baaf60ebf6c35f8e641f8fa4a21bf",
+      "url": "https://raw.githubusercontent.com/Saafke/FSRCNN_Tensorflow/6a4812c4ef1c4f5947d79beafa32a05a6eb4a94d/models/FSRCNN_x4.pb"
+    }
+  ],
+  "reference_engine": "face-mesh468-interior-luma-v1",
+  "reference_models": {
+    "package": "mediapipe==0.10.21",
+    "license_notice": "docs/analysis-dependencies/mediapipe-UPSTREAM-LICENSE",
+    "files": [
+      {
+        "path": "face_detection/face_detection_short_range.tflite",
+        "sha256": "bbff11cebd1eb27a1e004cae0b0e63ec8c551cbf34a4451148b4908b8db3eca8"
+      },
+      {
+        "path": "face_landmark/face_landmark.tflite",
+        "sha256": "1055cb9d4a9ca8b8c688902a3a5194311138ba256bcc94e336d8373a5f30c814"
+      }
+    ],
+    "download_behavior": "Only already bundled wheel models, no runtime model fetching."
+  }
+}
