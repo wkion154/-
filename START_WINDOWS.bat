@@ -9,10 +9,12 @@ if errorlevel 1 (
 )
 if not exist .venv\Scripts\python.exe py -3.12 -m venv .venv
 if errorlevel 1 goto failed
-if not exist .venv\kidol-0.7.4-ready (
+if not exist .venv\kidol-search-browser-ready (
  .venv\Scripts\python -m pip install -r requirements.lock
  if errorlevel 1 goto failed
- echo ready>.venv\kidol-0.7.4-ready
+ .venv\Scripts\python -m pip install -r requirements-browser.lock
+ if errorlevel 1 goto failed
+ echo ready>.venv\kidol-search-browser-ready
 )
 .venv\Scripts\python -m app.main
 if errorlevel 1 goto failed

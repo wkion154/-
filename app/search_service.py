@@ -15,6 +15,9 @@ class SearchService:
         if providers is None:
             from .providers.page_search import PageSearchProvider
             providers=[]
+            if online.settings.values.get('kpopping_browser_enabled',False):
+                from .providers.kpopping_browser import KpoppingBrowserProvider
+                providers.append(KpoppingBrowserProvider(online))
             for item in online.settings.values.get("image_search_templates",[])[:8]:
                 try:
                     if item.get("source")=="wikimedia":continue

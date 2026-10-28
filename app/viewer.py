@@ -242,6 +242,8 @@ class Viewer(QDialog):
             limited = image.width()<row['width'] or image.height()<row['height']
             status = '빠른 미리보기 · 원본 픽셀에서 전체 해상도' if limited else '전체 해상도'
             if row.get('kind','asset')!='asset':status+=' · 보기 캐시 · 제공된 파일 기준'
+            if row.get('preview_only'):status='제공된 미리보기 · 원본 해상도 미확인'
+            self.buttons['원본 픽셀'].setText('미리보기 픽셀' if row.get('preview_only') else '원본 픽셀')
             self.info.setText(f"{row['width']:,} × {row['height']:,}  ·  {row['format']}  ·  {status}\n{row['path']}")
             self.prefetch_timer.start(120)
             self.image_ready.emit(row['id'])

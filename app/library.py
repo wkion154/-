@@ -176,6 +176,10 @@ class LibraryService:
             return current
         if current['kind']=='web':
             item=self.online.web.repo.image(current['ref_id'])
+            if item['source_id']=='kpopping-browser' and item['role']=='thumbnail' and not self.online.web.repo.allowed(item['source_id'],'original_download',current['id']):
+                self.online.web.preview(item['id'],cancelled)
+                item=self.online.web.repo.image(item['id']);self.online.web.repo.require(item['source_id'],'thumbnail',current['id'])
+                return current|dict(path=item['cache_path'],sha256=item['sha256'],width=item['width'],height=item['height'],size=item['size'],format=item['mime'],managed=0,preview_only=True)
             self.online.web.repo.require(item['source_id'],'original_download',current['id'])
             cached=Path(item['cache_path']) if item['cache_path'] else None
             if cached is None or not cached.is_file():self.online.web.probe(item['id'],cancelled)

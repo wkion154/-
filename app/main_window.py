@@ -28,7 +28,7 @@ class MainWindow(QMainWindow):
     def __init__(self,db,settings):
         super().__init__()
         self.db,self.settings=db,settings
-        self.setWindowTitle('K-IDOL ARCHIVE · 7-4 개발판')
+        self.setWindowTitle('K-IDOL ARCHIVE · 검색 개편 1단계 실험')
         self.resize(1440,920)
         self.setMinimumSize(820,560)
         self.scope=None
@@ -69,6 +69,7 @@ class MainWindow(QMainWindow):
         self.search.setClearButtonEnabled(True)
         top.addWidget(self.search,1)
         self.web_search_button=self.button('인터넷 검색',self.start_internet_search);top.addWidget(self.web_search_button)
+        top.addWidget(self.button('브라우저 연결',self.configure_browser_search))
         self.search.returnPressed.connect(self.start_internet_search)
         self.search_composition=QComboBox()
         for label,value in [('전체 구도',None),('얼굴','face_close'),('얼굴·어깨','face_shoulders'),('상반신','upper_body'),('허리 위','waist_up'),('무릎 위','knees_up'),('전신','full_body')]:self.search_composition.addItem(label,value)
@@ -119,7 +120,7 @@ class MainWindow(QMainWindow):
         self.tree.customContextMenuRequested.connect(self.entity_menu)
         side.addWidget(self.tree,1)
         side.addWidget(self.button('멤버 연결 관리',self.memberships))
-        label=QLabel('STAGE 7-4\n로컬 우선 · 원본 보존')
+        label=QLabel('SEARCH · 1단계 실험\n로컬 우선 · 원본 보존')
         label.setObjectName('muted')
         side.addWidget(label)
         self.splitter.addWidget(self.sidebar)
@@ -460,6 +461,22 @@ class MainWindow(QMainWindow):
         current=self.gallery.currentIndex()
         if current.isValid() and self.model.row_at(current.row(),request=False):
             self.selection_changed(current)
+    def configure_browser_search(self):
+        from PySide6.QtWidgets import QFormLayout,QDialogButtonBox
+        from .providers.kpopping_browser import KpoppingBrowserProvider
+        dialog=QDialog(self);dialog.setWindowTitle('Windows 브라우저 검색 · 실험');form=QFormLayout(dialog)
+        note=QLabel('Kpopping 공개 검색·미리보기 전용입니다. Windows Edge/Chrome과 선택 브라우저 패키지가 필요합니다.\n장원영 목록 경로는 사용자 관측으로 확인됐습니다. 다른 이름의 자동 선택은 아직 미검증입니다.\n이 연결은 원본 다운로드·분석·AI 권한을 부여하지 않습니다.');note.setWordWrap(True);form.addRow(note)
+        consent=QCheckBox('이 출처의 검색·미리보기 이용 조건을 확인했고 해당 범위의 사용을 허용합니다.');form.addRow(consent)
+        reference=QLineEdit();reference.setPlaceholderText('확인한 이용 조건 URL 또는 문서 식별자');form.addRow('확인 근거',reference)
+        buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Save|QDialogButtonBox.StandardButton.Cancel);buttons.accepted.connect(dialog.accept);buttons.rejected.connect(dialog.reject);form.addRow(buttons)
+        if dialog.exec()!=QDialog.DialogCode.Accepted:return
+        if not consent.isChecked() or not reference.text().strip():self.statusBar().showMessage('이용 조건 확인과 근거 기록이 필요합니다.');return
+        provider=KpoppingBrowserProvider(self.online_service)
+        evidence=dict(reference=reference.text().strip(),note='User-reviewed public metadata search and provided preview display only. Not verified original, identity or AI rights.')
+        self.online_service.web.repo.grant_many(provider.name,{'metadata_search':'allowed','thumbnail':'allowed'},evidence,enabled=True)
+        self.internet_search.providers[provider.name]=provider;self.settings.values['kpopping_browser_enabled']=True
+        self.statusBar().showMessage('브라우저 연결을 저장했습니다. 검색어 입력 후 인터넷 검색을 누르세요.',10000)
+
     def partial_search_results(self,session):
         if session!=self.search_session:return
         self.refresh_force=True;self.remote_changed()
