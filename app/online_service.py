@@ -3,8 +3,9 @@ import json
 from pathlib import Path
 import time
 import uuid
+from PIL import Image
 from .images import inspect_image, file_hash, decode_preview
-from .providers.http import RemoteError, Cancelled, validate_url
+from .providers.http import RemoteError, Cancelled, validate_url, HOSTS
 from .online_repository import OnlineRepository
 from .artist_rules import automatic_profile
 from .providers.wikimedia import canonical_sha1
@@ -15,9 +16,9 @@ MAX_DOWNLOAD=256*1024*1024
 source_sha1=canonical_sha1
 
 
-def download_file(http,url,destination,cancelled,limit=MAX_DOWNLOAD,expected_size=0,expected_sha1=None):
+def download_file(http,url,destination,cancelled,limit=MAX_DOWNLOAD,expected_size=0,expected_sha1=None,max_pixels=100_000_000):
     """Stream to a unique partial file; never publish incomplete/unverified bytes."""
-    validate_url(url)
+    validate_url(url,getattr(http,'allowed_hosts',HOSTS))
     destination=Path(destination)
     destination.parent.mkdir(parents=True,exist_ok=True)
     temp=destination.with_name(destination.name+'.'+uuid.uuid4().hex+'.part')
@@ -37,7 +38,10 @@ def download_file(http,url,destination,cancelled,limit=MAX_DOWNLOAD,expected_siz
         expected=source_sha1(expected_sha1)
         if expected and sha1.hexdigest()!=expected:raise RemoteError('원본 SHA-1 체크섬이 일치하지 않습니다.',retryable=True)
         # Decode before atomic publication. Small previews are also validated as real images.
-        decode_preview(temp,1024)
+        with Image.open(temp) as header:
+            if header.format not in ('JPEG','PNG','WEBP','BMP','TIFF') or header.width*header.height>max_pixels:
+                raise RemoteError('지원 형식/이미지 픽셀 한도를 확인하세요.')
+        decode_preview(temp,1024,pixel_limit=max_pixels)
         if cancelled.is_set():raise Cancelled()
         # Respect pre-existing files: reuse only identical bytes, never overwrite user changes.
         if destination.exists():
@@ -53,19 +57,27 @@ class OnlineService:
         self.db,self.settings,self.provider=db,settings,provider
         self.repo=OnlineRepository(db,clock)
         self.clock=clock
+        from .web_service import WebService
+        self.web=WebService(db,settings,clock=clock)
 
-    def require_review(self):
+    def ready(self,operation='metadata_search'):
+        return self.repo.reviewed() and self.web.repo.allowed('wikimedia',operation)
+
+    def require_review(self,operation='metadata_search',resource=None):
         if not self.repo.reviewed():
             raise RemoteError('제공처의 최신 정책/API 확인이 대기 중입니다. 실제 온라인 수집은 아직 활성화하지 않았습니다.',blocked=True)
+        self.web.repo.require('wikimedia',operation,resource)
 
-    def run_one(self,cancelled):
-        job=self.repo.claim()
+    def run_one(self,cancelled,queue='network',job_id=None):
+        job=self.repo.claim(queue,job_id)
         if not job:return None
+        activity=getattr(self,'on_job_started',None)
+        if activity:activity(queue)
         state='done'
         result=None
         try:
             if cancelled.is_set():raise Cancelled()
-            self.require_review()
+            if not job['kind'].startswith('web_'):self.require_review()
             result,next_payload=self.execute(job,cancelled)
             state='queued' if next_payload is not None else 'done'
             self.repo.finish(job['id'],state,result=result,payload=next_payload)
@@ -83,10 +95,11 @@ class OnlineService:
             logging.exception('Online job failed')
             state='failed'
             self.repo.finish(job['id'],'failed',str(error))
-        return dict(id=job['id'],kind=job['kind'],state=state,library_changed=state=='done' and (job['kind']=='download' or bool(result and result.get('registered'))))
+        return dict(id=job['id'],kind=job['kind'],state=state,library_changed=state=='done' and (job['kind'] in ('download','web_download') or bool(result and result.get('registered'))))
 
     def execute(self,job,cancelled):
         kind,payload=job['kind'],job['payload']
+        if kind.startswith('web_'):return self.web.execute(job,cancelled),None
         if kind=='discover':
             candidates,cursor=self.provider.discover(payload.get('cursor'),cancelled)
             for candidate in candidates:self.repo.candidate(candidate)
@@ -133,6 +146,7 @@ class OnlineService:
             return dict(indexed=len(images),complete=not cursor),({'target_id':target['id'],'cursor':cursor} if cursor else None)
         if kind=='download':
             row=self.repo.image(payload['remote_id'])
+            self.require_review('original_download','commons:'+row['id'])
             if row['license_status']!='eligible':raise RemoteError('원본 저장 전 파일별 이용 조건 확인이 필요합니다.',blocked=True)
             local=None
             if row['local_asset_id']:
@@ -161,7 +175,7 @@ class OnlineService:
                 # Category membership does not establish who appears in a photograph.
                 if target['kind']=='group':group=target['entity_id']
                 elif payload.get('person_confirmed'):person=target['entity_id']
-            identity,_=self.db.register(meta,person,group)
+            identity,_=self.db.register(meta,person,group,origin='wikimedia')
             with self.db.connect() as conn:
                 conn.execute('UPDATE assets SET captured=COALESCE(captured,?),published=COALESCE(published,?) WHERE id=?',(row['captured'],row['published'],identity))
             self.repo.image_path(row['id'],destination,identity)
@@ -170,6 +184,7 @@ class OnlineService:
 
     def thumbnail(self,identity,cancelled):
         row=self.repo.image(identity)
+        self.require_review('thumbnail','commons:'+row['id'])
         cached=Path(row['thumbnail_path']) if row['thumbnail_path'] else None
         if cached and cached.is_file():return decode_preview(cached,512)
         self.require_review()

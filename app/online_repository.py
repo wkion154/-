@@ -110,6 +110,9 @@ class OnlineRepository:
                 else:
                     conn.execute('UPDATE remote_images SET '+','.join(k+'=?' for k in keys)+',updated=?,payload=? WHERE id=?',(*(image.get(k) for k in keys),self.clock(),json.dumps(image,ensure_ascii=False),identity))
                 conn.execute('INSERT OR IGNORE INTO remote_targets VALUES(?,?)',(identity,target_id))
+                for operation in ('metadata_search','thumbnail','original_download'):
+                    state='allowed' if operation=='metadata_search' or image['license_status']=='eligible' else 'review'
+                    conn.execute('INSERT INTO resource_permissions(resource_id,operation,state,evidence,checked,managed_by) VALUES(?,?,?,?,?,?) ON CONFLICT(resource_id,operation) DO UPDATE SET state=excluded.state,evidence=excluded.evidence,checked=excluded.checked WHERE resource_permissions.managed_by=?',('commons:'+identity,operation,state,json.dumps({'reference':image['source_url'],'note':'Per-file license metadata: '+str(image.get('license_name',''))+'; attribution: '+str(image.get('attribution',''))}),self.clock(),'auto_license','auto_license'))
             conn.execute('UPDATE watch_targets SET cursor=?,last_success=?,next_due=? WHERE id=?',(json.dumps(cursor) if cursor else None,self.clock(),self.clock()+6*3600,target_id))
 
     def images(self,target_id=None,offset=0,limit=200):
@@ -130,8 +133,8 @@ class OnlineRepository:
             else:conn.execute('UPDATE remote_images SET thumbnail_path=? WHERE id=?',(str(path),identity))
 
     def enqueue(self,kind,payload,key=None,force=False,refresh_after=24*3600):
-        if kind not in ('discover','enrich','refresh','photos','download'):raise ValueError('지원하지 않는 갱신 작업')
-        key=key or kind+':'+str(payload.get('target_id',payload.get('remote_id','all')))
+        if kind not in ('discover','enrich','refresh','photos','download','web_scan','web_probe','web_download','web_analyze'):raise ValueError('지원하지 않는 갱신 작업')
+        key=key or kind+':'+str(payload.get('target_id',payload.get('remote_id',payload.get('item_id',payload.get('page_id','all')))))
         now=self.clock()
         with self.db.connect() as conn:
             conn.execute('BEGIN IMMEDIATE')
@@ -145,11 +148,14 @@ class OnlineRepository:
             conn.execute('INSERT INTO sync_jobs(id,job_key,kind,payload,next_run,updated) VALUES(?,?,?,?,?,?)',(identity,key,kind,json.dumps(payload),now,now))
             return identity
 
-    def claim(self):
+    def claim(self,queue='network',identity=None):
         now=self.clock()
         with self.db.connect() as conn:
             conn.execute('BEGIN IMMEDIATE')
-            row=conn.execute("SELECT * FROM sync_jobs WHERE state IN ('queued','retry') AND next_run<=? ORDER BY CASE kind WHEN 'download' THEN 0 WHEN 'refresh' THEN 1 WHEN 'photos' THEN 2 WHEN 'enrich' THEN 3 ELSE 4 END,updated LIMIT 1",(now,)).fetchone()
+            queue_clause=" AND kind='web_analyze'" if queue=='analysis' else " AND kind<>'web_analyze'"
+            if identity:queue_clause+=' AND id=?'
+            arguments=(now,identity) if identity else (now,)
+            row=conn.execute("SELECT * FROM sync_jobs WHERE state IN ('queued','retry') AND next_run<=?"+queue_clause+" ORDER BY CASE kind WHEN 'download' THEN 0 WHEN 'web_download' THEN 0 WHEN 'web_probe' THEN 1 WHEN 'refresh' THEN 1 WHEN 'photos' THEN 2 WHEN 'enrich' THEN 3 ELSE 4 END,updated LIMIT 1",arguments).fetchone()
             if not row:return None
             conn.execute("UPDATE sync_jobs SET state='running',attempts=attempts+1,updated=? WHERE id=?",(now,row['id']))
             result=dict(row);result['attempts']+=1;result['payload']=json.loads(result['payload'])
@@ -158,6 +164,11 @@ class OnlineRepository:
     def finish(self,identity,state,message='',result=None,payload=None,delay=0):
         with self.db.connect() as conn:
             conn.execute('UPDATE sync_jobs SET state=?,message=?,result=?,payload=COALESCE(?,payload),next_run=?,updated=?,attempts=CASE WHEN ? THEN 0 ELSE attempts END WHERE id=?',(state,message,json.dumps(result) if result is not None else None,json.dumps(payload) if payload is not None else None,self.clock()+delay,self.clock(),int(state=='queued' and result is not None),identity))
+
+    def job_state(self,identity):
+        with self.db.connect() as conn:
+            row=conn.execute('SELECT state FROM sync_jobs WHERE id=?',(identity,)).fetchone()
+            return row['state'] if row else None
 
     def jobs(self):
         with self.db.connect() as conn:return [dict(r) for r in conn.execute('SELECT * FROM sync_jobs ORDER BY updated DESC LIMIT 200')]

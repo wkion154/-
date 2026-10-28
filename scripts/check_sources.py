@@ -24,6 +24,7 @@ def main():
     parser.add_argument('--observed-reason',default='Live access has not been validated.')
     parser.add_argument('--record-review',action='store_true')
     parser.add_argument('--review-note')
+    parser.add_argument('--permissions',default='metadata_search',help='Explicit independently-reviewed operation names, comma-separated; default metadata only')
     args=parser.parse_args()
     result=dict(checked_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),policy_reviewed=False,
                 status='not_run' if args.offline else 'checking',documents=[],vocabulary_checked=False)
@@ -52,7 +53,13 @@ def main():
                 from app.online_repository import OnlineRepository
                 root=data_root();Settings(root)
                 result.update(policy_reviewed=True,review_note=args.review_note)
-                OnlineRepository(Database(root/'library.sqlite3')).record_review(result)
+                database=Database(root/'library.sqlite3')
+                OnlineRepository(database).record_review(result)
+                from app.source_repository import SourceRepository
+                sources=SourceRepository(database)
+                for operation in args.permissions.split(','):
+                    sources.grant('wikimedia',operation.strip(),'allowed',{'reference':result['documents'][0]['url'],'note':args.review_note})
+                sources.enable('wikimedia',True)
                 result['status']='review_recorded'
         except Exception as error:
             result.update(status='blocked_or_failed',reason=str(error),policy_reviewed=False)

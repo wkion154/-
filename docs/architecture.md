@@ -66,3 +66,7 @@ Thumbnail version and source path/size/mtime signature invalidate persistent cac
 3. Add cancellable async artist tree reads, stable snapshot/keyset pagination, richer membership/name/solo histories and typed provider/source/license/sync migrations before online collection.
 4. Validate each provider's current terms, API/rate limits and separate metadata/image/AI usage rights. No external platform has been approved in this alpha.
 5. Preserve existing photo links/favorites/corrections through every migration. Background collection/analysis must yield to foreground image viewing.
+
+## v0.4 multi-source extension
+
+`source_specs` validates data-only manifests; `source_schema` adds schema v3. `source_repository` stores independent permissions, pages, immutable revision evidence and provenance. `page_discovery` extracts declared image candidates; `web_service` mediates permission/robots/host checks, measured probes, explicit preservation and separately permitted similarity analysis. Optional `rendered_page` uses sandboxed Playwright with intercepted resources, not a screenshot source. `source_pane` keeps the source workflow inside the online dialog. Network and local analysis have separate bounded runner queues. Source IDs/categories flow through the virtual gallery and viewer queries. See stage-4-report.md for limits and actual validation scope.

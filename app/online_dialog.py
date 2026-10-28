@@ -1,12 +1,14 @@
 """Dark source browser: proposals, watched artists, remote metadata and job status."""
 import json
+import html
 from PySide6.QtCore import Qt,QTimer,QUrl,Signal
 from PySide6.QtGui import QPixmap,QDesktopServices
 from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,QTabWidget,QTableWidget,QTableWidgetItem,QHeaderView,QComboBox,QLineEdit,QFormLayout,QDialogButtonBox,QCheckBox,QSplitter,QWidget,QMessageBox)
 from .workers import Tasks
 from .providers.wikimedia import qid
+from .source_pane import SourcePane
 
-KIND_LABELS={'discover':'신규 아티스트 탐색','enrich':'아티스트 정보 확인','refresh':'대상 정보 갱신','photos':'사진 목록 갱신','download':'원본 보관'}
+KIND_LABELS={'web_scan':'공개 페이지 탐색','web_probe':'허용된 이미지 실측','web_download':'선택 버전 보관','web_analyze':'허용된 유사 후보 검사','discover':'신규 아티스트 탐색','enrich':'아티스트 정보 확인','refresh':'대상 정보 갱신','photos':'사진 목록 갱신','download':'원본 보관'}
 
 def job_summary(job):
     if job['message']:return job['message']
@@ -40,7 +42,7 @@ class OnlineDialog(QDialog):
         self.candidate_rows=[];self.target_rows=[];self.image_rows=[];self.job_rows=[]
         layout=QVBoxLayout(self)
         title=QLabel('ONLINE ARCHIVE');title.setObjectName('eyebrow');layout.addWidget(title)
-        self.status=QLabel('저장된 출처 정보 확인 중…');self.status.setWordWrap(True);layout.addWidget(self.status)
+        self.status=QLabel('저장된 출처 정보 확인 중…');self.status.setTextFormat(Qt.TextFormat.PlainText);self.status.setWordWrap(True);layout.addWidget(self.status)
         actions=QHBoxLayout()
         actions.addWidget(self.button('신규 아티스트 탐색',self.discover))
         actions.addWidget(self.button('Q ID로 대상 추가',self.add_qid))
@@ -72,7 +74,7 @@ class OnlineDialog(QDialog):
         tools.addWidget(self.button('다음 200개',lambda:self.page(200)))
         body.addLayout(tools)
         split=QSplitter();body.addWidget(split,1)
-        self.images=self.table(['사진','해상도','이용 조건','원본 보관'])
+        self.images=self.table(['사진','제공처 해상도','이용 조건','원본 보관'])
         split.addWidget(self.images)
         details=QWidget();right=QVBoxLayout(details)
         self.preview=QLabel('사진을 선택하세요\n썸네일만 필요할 때 받습니다.')
@@ -94,6 +96,8 @@ class OnlineDialog(QDialog):
         split.addWidget(details);split.setSizes([700,360])
         self.tabs.addTab(page,'온라인 사진')
         self.tabs.addTab(self.jobs,'작업 상태')
+        self.source_pane=SourcePane(service,runner,self)
+        self.tabs.addTab(self.source_pane,'출처 · URL')
         bottom=QHBoxLayout()
         bottom.addWidget(self.button('선택 후보 등록/연결',self.accept))
         bottom.addWidget(self.button('선택 작업 재시도',self.retry))
@@ -130,7 +134,7 @@ class OnlineDialog(QDialog):
         for r,values in enumerate(rows):
             for c,value in enumerate(values):
                 item=QTableWidgetItem(str(value or '—'))
-                item.setToolTip(str(value or ''))
+                item.setToolTip('<span>'+html.escape(str(value or ''))+'</span>')
                 if c==0:
                     identity=identities[r] if identities else r
                     item.setData(Qt.ItemDataRole.UserRole,identity)
@@ -150,7 +154,7 @@ class OnlineDialog(QDialog):
         self.snapshot_pending=True
         target=self.filter.currentData();offset=self.offset
         def load(_):
-            return self.repo.reviewed(),self.repo.candidates(),self.repo.targets(),self.repo.images(target,offset),self.repo.jobs()
+            return self.service.ready(),self.repo.candidates(),self.repo.targets(),self.repo.images(target,offset),self.repo.jobs()
         def done(result):
             self.snapshot_pending=False
             if target!=self.filter.currentData() or offset!=self.offset:
@@ -185,8 +189,8 @@ class OnlineDialog(QDialog):
         self.tasks.submit(load,done,error)
 
     def enqueue(self,kind,payload,key=None):
-        def done(_):
-            self.runner.tick(manual=True);self.reload()
+        def done(identity):
+            self.runner.request(identity);self.reload()
             self.tabs.setCurrentWidget(self.jobs)
         self.tasks.submit(lambda _:self.repo.enqueue(kind,payload,key=key,force=True),done,self.fail)
 
@@ -207,8 +211,8 @@ class OnlineDialog(QDialog):
         candidate=dict(external_id=external,kind=kind.currentData(),name=external)
         def work(_):
             self.repo.candidate(candidate)
-            self.repo.enqueue('enrich',{'ids':[external]},key='enrich:'+external,force=True)
-        self.tasks.submit(work,lambda _:(self.runner.tick(manual=True),self.reload()),self.fail)
+            return self.repo.enqueue('enrich',{'ids':[external]},key='enrich:'+external,force=True)
+        self.tasks.submit(work,lambda identity:(self.runner.request(identity),self.reload()),self.fail)
 
     def refresh_target(self):
         index=self.targets.currentRow()
@@ -295,7 +299,7 @@ class OnlineDialog(QDialog):
         index=self.jobs.currentRow()
         if not 0<=index<len(self.job_rows):self.fail('재시도할 작업을 선택하세요.');return
         identity=self.job_rows[index]['id']
-        self.tasks.submit(lambda _:self.repo.retry(identity),lambda _:(self.runner.tick(manual=True),self.reload()),self.fail)
+        self.tasks.submit(lambda _:self.repo.retry(identity),lambda _:(self.runner.request(identity),self.reload()),self.fail)
 
     def auto_register_changed(self,value):
         self.settings.values['auto_register']=value
@@ -307,6 +311,7 @@ class OnlineDialog(QDialog):
         try:self.settings.save()
         except OSError as e:self.fail(str(e))
         if not value:self.runner.pause()
+        else:self.runner.resume()
 
     def shutdown(self):
         if self.closed:return
@@ -315,6 +320,7 @@ class OnlineDialog(QDialog):
         except (RuntimeError,TypeError):pass
         self.generation+=1
         self.timer.stop()
+        self.source_pane.shutdown()
         self.tasks.stop();self.preview_tasks.stop()
 
     def done(self,result):self.shutdown();super().done(result)

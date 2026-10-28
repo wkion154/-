@@ -134,7 +134,7 @@ def import_paths(db, paths, cache, storage, managed, person, group, cancelled, p
 QImageReader.setAllocationLimit(512)
 
 
-def decode_preview(path, edge=4096):
+def decode_preview(path, edge=4096, pixel_limit=MAX_PIXELS):
     """Decode directly to an owned QImage, allowing native JPEG downsampling.
 
     Avoids PIL -> RGBA -> bytes -> QImage copies for the interactive viewer.
@@ -143,8 +143,8 @@ def decode_preview(path, edge=4096):
     reader = QImageReader(str(path))
     reader.setAutoTransform(True)
     size = reader.size()
-    if not size.isValid() or size.width()*size.height()>MAX_PIXELS:
-        raise ValueError('이미지 형식 또는 크기를 확인하세요. 최대 1억 픽셀입니다.')
+    if not size.isValid() or size.width()*size.height()>pixel_limit:
+        raise ValueError(f'이미지 형식 또는 크기를 확인하세요. 최대 {pixel_limit:,}픽셀입니다.')
     if max(size.width(),size.height())>edge:
         reader.setScaledSize(size.scaled(QSize(edge,edge),Qt.AspectRatioMode.KeepAspectRatio))
     image = reader.read()

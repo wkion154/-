@@ -1,0 +1,11 @@
+{
+  "id": "example-owned-site",
+  "name": "검토할 공개 사이트 · 예시 도메인",
+  "category": "official",
+  "adapter": "html",
+  "domains": ["photos.example", "cdn.example"],
+  "policy_urls": ["https://photos.example/terms"],
+  "original_attributes": ["data-original"],
+  "interval_seconds": 2.0,
+  "render_allow_xhr": false
+}

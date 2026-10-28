@@ -37,7 +37,13 @@ def source(png):
     return dict(source_id='1234',source_url='https://commons.wikimedia.org/wiki/File:Example.png',original_url='https://upload.wikimedia.org/wikipedia/commons/1/12/Example.png',thumbnail_url='https://upload.wikimedia.org/wikipedia/commons/thumb/1/12/Example.png/512px-Example.png',title='File:Example.png',width=64,height=96,size=len(png),mime='image/png',source_sha1=hashlib.sha1(png).hexdigest(),license_name='CC BY-SA 4.0',license_url='https://creativecommons.org/licenses/by-sa/4.0/',attribution='Fixture author',restrictions='',license_status='eligible',captured=None,published='2026-01-01T00:00:00Z')
 
 
-def approved(repo):repo.record_review({'documents':[{'url':'fixture://policy','sha256':'test-only'}],'scope':'TEST FIXTURE, NOT LIVE POLICY REVIEW'})
+def approved(repo):
+    repo.record_review({'documents':[{'url':'fixture://policy','sha256':'test-only'}],'scope':'TEST FIXTURE, NOT LIVE POLICY REVIEW'})
+    from app.source_repository import SourceRepository
+    sources=SourceRepository(repo.db)
+    for operation in ('metadata_search','thumbnail','original_download'):
+        sources.grant('wikimedia',operation,'allowed',{'reference':'fixture://policy','note':'TEST FIXTURE, NOT LIVE REVIEW'})
+    sources.enable('wikimedia',True)
 
 def target(repo,kind='person',external_id='Q1234',name='Fixture Artist'):
     repo.candidate(dict(external_id=external_id,kind=kind,name=name,category='Fixture',aliases=[]))
@@ -58,7 +64,7 @@ def test_v1_migration_backup_and_user_data_preserved(tmp_path):
         assert saved.execute('SELECT name FROM groups').fetchone()[0]=='User Name'
     Database(path)
     assert len(list(tmp_path.glob('*.bak')))==1
-    with db.connect() as migrated:assert migrated.execute('PRAGMA user_version').fetchone()[0]==2
+    with db.connect() as migrated:assert migrated.execute('PRAGMA user_version').fetchone()[0]==3
 
 
 def test_external_identity_never_merges_same_name_or_overwrites_user(db):
@@ -265,7 +271,8 @@ def test_background_online_work_keeps_gui_event_loop_running(qtbot,settings):
     from PySide6.QtCore import QTimer
     from app.online_runner import OnlineRunner
     started=threading.Event();release=threading.Event()
-    def work(cancel):
+    def work(cancel,queue='network'):
+        if queue=='analysis':return None
         started.set();release.wait(2);return None
     repo=SimpleNamespace(recover=lambda:None,reviewed=lambda:False,schedule=lambda:None)
     service=SimpleNamespace(repo=repo,run_one=work)

@@ -20,7 +20,7 @@ class MainWindow(QMainWindow):
     def __init__(self,db,settings):
         super().__init__()
         self.db,self.settings=db,settings
-        self.setWindowTitle('K-IDOL ARCHIVE · Alpha 3')
+        self.setWindowTitle('K-IDOL ARCHIVE · Alpha 4')
         self.resize(1440,920)
         self.setMinimumSize(820,560)
         self.scope=None
@@ -51,6 +51,7 @@ class MainWindow(QMainWindow):
         top.addWidget(self.search,1)
         self.info_toggle=self.button('정보 패널',self.toggle_info)
         top.addWidget(self.info_toggle)
+        self.sync_label=QLabel('준비됨');self.sync_label.setObjectName('muted');top.addWidget(self.sync_label)
         top.addWidget(self.button('온라인',self.open_online))
         top.addWidget(self.button('설정',self.open_settings))
         outer.addWidget(toolbar)
@@ -86,7 +87,7 @@ class MainWindow(QMainWindow):
         self.tree.customContextMenuRequested.connect(self.entity_menu)
         side.addWidget(self.tree,1)
         side.addWidget(self.button('멤버 연결 관리',self.memberships))
-        label=QLabel('ALPHA 3\n로컬 우선 · 원본 보존')
+        label=QLabel('ALPHA 4\n로컬 우선 · 원본 보존')
         label.setObjectName('muted')
         side.addWidget(label)
         self.splitter.addWidget(self.sidebar)
@@ -130,6 +131,11 @@ class MainWindow(QMainWindow):
         refresh=self.button('↻',lambda:self.reload(preserve=True))
         refresh.setToolTip('라이브러리 새로고침')
         tools.addWidget(refresh)
+        self.source_filter=QComboBox()
+        self.source_filter.addItem('전체 출처',None)
+        for name,category in [('공식 사진','official'),('SNS','social'),('언론사','press'),('팬 촬영','fan'),('사용자 등록','user')]:self.source_filter.addItem(name,'category:'+category)
+        self.source_filter.setToolTip('출처별 필터 · 연결되지 않은 출처에는 결과가 없습니다.')
+        tools.addWidget(self.source_filter)
         tools.addWidget(self.sort)
         self.slider=QSlider(Qt.Orientation.Horizontal)
         self.slider.setRange(128,384)
@@ -197,6 +203,7 @@ class MainWindow(QMainWindow):
         self.search_timer.timeout.connect(self.search_changed)
         self.search.textChanged.connect(lambda:self.search_timer.start())
         self.sort.currentIndexChanged.connect(self.sort_changed)
+        self.source_filter.currentIndexChanged.connect(lambda:self.reload())
         self.slider.valueChanged.connect(self.gallery.set_size)
         self.model.changed.connect(self.loaded)
         self.model.failed.connect(self.error)
@@ -212,14 +219,32 @@ class MainWindow(QMainWindow):
         self.online_service=OnlineService(db,settings,WikimediaProvider(HttpClient()))
         self.online_runner=OnlineRunner(self.online_service,settings,self)
         self.online_runner.library_changed.connect(self.online_changed)
+        self.online_runner.state_changed.connect(self.sync_label.setText)
         self.online_runner.error.connect(lambda message:self.statusBar().showMessage(message,12000))
+        self.refresh_source_filters()
         self.restore_window()
         self.refresh_entities()
         self.navigate('all')
 
+    def selected_source_filter(self):
+        value=self.source_filter.currentData()
+        return tuple(value.split(':',1)) if value else None
+
+    def refresh_source_filters(self):
+        current=self.source_filter.currentData()
+        self.source_filter.blockSignals(True)
+        while self.source_filter.count()>6:self.source_filter.removeItem(6)
+        for source in self.online_service.web.repo.profiles():
+            if source['adapter'] not in ('candidate','local'):
+                self.source_filter.addItem(source['name'],'site:'+source['id'])
+        index=self.source_filter.findData(current)
+        self.source_filter.setCurrentIndex(max(0,index))
+        self.source_filter.blockSignals(False)
+
     def online_changed(self):
         # Keep foreground browsing stable when new verified originals are registered.
         self.refresh_entities()
+        self.refresh_source_filters()
         self.reload(preserve=True)
 
     def open_online(self):
@@ -268,7 +293,7 @@ class MainWindow(QMainWindow):
             parent.setExpanded(True)
     def navigate(self,key):
         self.section=key
-        self.scope=(key[:-1] if key=='groups' else key,None) if key in ('favorite','solo','groups') else None
+        self.scope=(key[:-1] if key=='groups' else key,None) if key in ('favorite','solo','groups','local') else None
         for k,b in self.nav.items():b.setChecked(k==key)
         titles=dict(all='라이브러리',latest='최신 사진',groups='그룹 컬렉션',solo='솔로 아티스트',favorite='즐겨찾기',local='로컬 라이브러리')
         self.heading.setText(titles[key])
@@ -311,15 +336,16 @@ class MainWindow(QMainWindow):
         self.selected=None
         self.info_name.setText('사진을 선택하세요')
         for b in (self.fav_button,self.associate_button,self.relink_button):b.setEnabled(False)
-        self.model.reload(self.scope,self.search.text(),self.sort.currentData())
+        self.model.reload(self.scope,self.search.text(),self.sort.currentData(),source_filter=self.selected_source_filter())
     def loaded(self,total):
         if self.bookmark is not None and not self.model.loading:
             identity,y_offset,selected_id=self.bookmark
             self.bookmark=None
             generation=self.model.generation
             scope,search,sort=self.model.scope,self.model.search,self.model.sort
+            source_filter=self.model.source_filter
             def locate(_):
-                return (self.db.locate(identity,scope,search,sort),self.db.locate(selected_id,scope,search,sort) if selected_id else None)
+                return (self.db.locate(identity,scope,search,sort,source_filter),self.db.locate(selected_id,scope,search,sort,source_filter) if selected_id else None)
             def restore(result):
                 if self.model.generation!=generation:return
                 position,selected=result
@@ -422,6 +448,9 @@ class MainWindow(QMainWindow):
         for b in (self.fav_button,self.associate_button,self.relink_button):b.setEnabled(True)
         people,groups=self.db.associations(row['id'])
         self.info_text.setText(f"{row['width']:,} × {row['height']:,}\n{row['format']}  ·  {row['size']/1024/1024:.2f} MB\n\n인물: {', '.join(p['name'] for p in people) or '미연결'}\n그룹: {', '.join(g['name'] for g in groups) or '미연결'}\n\n{'앱 관리 원본' if row['managed'] else '외부 파일 참조'}\n{row['path']}")
+        with self.db.connect() as conn:
+            web_sources=[dict(r) for r in conn.execute("SELECT p.name,s.page_url,s.image_url,s.license_url,s.attribution FROM asset_sources s JOIN source_profiles p ON p.id=s.source_id WHERE s.asset_id=? AND s.item_id<>''",(row['id'],))]
+        if web_sources:self.info_text.setText(self.info_text.text()+'\n\n'+'\n'.join(x['name']+'\n'+x['page_url']+'\n'+x['image_url']+'\n'+x['license_url']+'\n'+x['attribution'] for x in web_sources))
         sources=self.online_service.repo.source_for_asset(row['id'])
         if sources:
             self.info_text.setText(self.info_text.text()+'\n\n'+'\n'.join(x['source_url']+'\n'+(x['license_name'] or '이용 조건 확인 필요')+'\n'+(x['attribution'] or '') for x in sources))
@@ -475,9 +504,10 @@ class MainWindow(QMainWindow):
         if not index.isValid() or self.model.row_at(index.row()) is None:return
         scroll=self.gallery.verticalScrollBar().value()
         scope,search,sort=self.model.scope,self.model.search,self.model.sort
+        source_filter=self.model.source_filter
         base=(index.row()//self.model.PAGE_SIZE)*self.model.PAGE_SIZE
         seed=[dict(r) for r in self.model.pages[base//self.model.PAGE_SIZE]]
-        viewer=Viewer(seed,index.row()-base,self,self.settings.values['viewer_mode'],lambda offset:self.db.query(scope,search,sort,offset),self.model.total,base_index=base)
+        viewer=Viewer(seed,index.row()-base,self,self.settings.values['viewer_mode'],lambda offset:self.db.query(scope,search,sort,offset,source_filter=source_filter),self.model.total,base_index=base)
         def favorite(identity,value):
             self.persist_favorite(identity,value)
         viewer.favorite_changed.connect(favorite)

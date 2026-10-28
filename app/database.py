@@ -31,13 +31,14 @@ class Database:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         from .online_schema import SCHEMA_V2
+        from .source_schema import SCHEMA_V3
         with self.connect() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version > 2:
+            if version > 3:
                 raise RuntimeError('이 라이브러리는 더 최신 버전의 앱에서 생성되었습니다.')
             # SQLite backup includes WAL contents; never replace an existing user backup.
-            if version == 1:
-                backup_path = self.path.with_name(self.path.name+'.v1-'+uuid.uuid4().hex[:12]+'.bak')
+            if version in (1,2):
+                backup_path = self.path.with_name(self.path.name+f'.v{version}-'+uuid.uuid4().hex[:12]+'.bak')
                 destination = sqlite3.connect(backup_path)
                 try:
                     db.backup(destination)
@@ -52,7 +53,11 @@ class Database:
                 for statement in SCHEMA_V2.split(';'):
                     if statement.strip():db.execute(statement)
                 db.execute('INSERT INTO schema_migrations VALUES(2,?)',(time.time(),))
-            db.execute('PRAGMA user_version=2')
+            if version < 3:
+                for statement in SCHEMA_V3.split(';'):
+                    if statement.strip():db.execute(statement)
+                db.execute('INSERT INTO schema_migrations VALUES(3,?)',(time.time(),))
+            db.execute('PRAGMA user_version=3')
 
     @contextmanager
     def connect(self):
@@ -116,7 +121,7 @@ class Database:
         with self.connect() as db:
             return [dict(r) for r in db.execute('SELECT p.*,m.gallery_target FROM persons p JOIN memberships m ON m.person_id=p.id WHERE m.group_id=? ORDER BY p.name', (group,))]
 
-    def register(self, metadata, person=None, group=None):
+    def register(self, metadata, person=None, group=None, origin='local'):
         with self.connect() as db:
             row = db.execute('SELECT id FROM assets WHERE sha256=?', (metadata['sha256'],)).fetchone()
             duplicate = row is not None
@@ -128,10 +133,23 @@ class Database:
                 db.execute('INSERT OR IGNORE INTO image_person(image_id,person_id) VALUES(?,?)', (identity, person))
             if group:
                 db.execute('INSERT OR IGNORE INTO image_group VALUES(?,?)', (identity, group))
+            if origin:
+                db.execute('INSERT OR IGNORE INTO asset_sources(id,asset_id,source_id) VALUES(?,?,?)',(uuid.uuid4().hex,identity,origin))
             return identity, duplicate
 
-    def _selection(self, scope, search, sort):
+    def _selection(self, scope, search, sort, source_filter=None):
         where, args = [], []
+        if not scope or scope[0] not in ('local','favorite'):
+            where.append("a.id NOT IN (SELECT v.asset_id FROM asset_visibility v WHERE v.hidden=1 AND v.asset_id IS NOT NULL AND EXISTS(SELECT 1 FROM image_person ip JOIN persons p ON p.id=ip.person_id WHERE ip.image_id=v.asset_id AND p.gender='male') AND NOT EXISTS(SELECT 1 FROM image_person ip JOIN persons p ON p.id=ip.person_id WHERE ip.image_id=v.asset_id AND p.gender<>'male'))")
+        if source_filter:
+            filter_kind,value=source_filter
+            if filter_kind=='site':
+                where.append('(EXISTS(SELECT 1 FROM asset_sources s WHERE s.asset_id=a.id AND s.source_id=?)'+(" OR EXISTS(SELECT 1 FROM remote_images r WHERE r.local_asset_id=a.id)" if value=='wikimedia' else '')+')')
+                args.append(value)
+            elif filter_kind=='category':
+                extra=" OR EXISTS(SELECT 1 FROM remote_images r WHERE r.local_asset_id=a.id)" if value=='fan' else (" OR EXISTS(SELECT 1 FROM asset_sources s WHERE s.asset_id=a.id AND s.source_id='local')" if value=='user' else '')
+                where.append('(EXISTS(SELECT 1 FROM asset_sources s JOIN source_profiles p ON p.id=s.source_id WHERE s.asset_id=a.id AND p.category=?)'+extra+')')
+                args.append(value)
         if scope:
             kind, value = scope
             if kind == 'favorite':
@@ -154,16 +172,16 @@ class Database:
         clause = ' WHERE ' + ' AND '.join(where) if where else ''
         return clause, args, orders.get(sort,orders['newest'])
 
-    def query(self, scope=None, search='', sort='newest', offset=0, limit=256, count=True):
-        clause,args,order = self._selection(scope,search,sort)
+    def query(self, scope=None, search='', sort='newest', offset=0, limit=256, count=True, source_filter=None):
+        clause,args,order = self._selection(scope,search,sort,source_filter)
         with self.connect() as db:
             total = db.execute('SELECT COUNT(*) FROM assets a'+clause, args).fetchone()[0] if count else None
             rows = [dict(r) for r in db.execute('SELECT a.* FROM assets a'+clause+' ORDER BY '+order+' LIMIT ? OFFSET ?', (*args, limit, offset))]
             return rows, total
 
-    def locate(self, identity, scope=None, search='', sort='newest'):
+    def locate(self, identity, scope=None, search='', sort='newest', source_filter=None):
         """Find the ordered position of a stable ID without transferring all rows."""
-        clause,args,order = self._selection(scope,search,sort)
+        clause,args,order = self._selection(scope,search,sort,source_filter)
         with self.connect() as db:
             row = db.execute('SELECT position FROM (SELECT a.id,ROW_NUMBER() OVER (ORDER BY '+order+')-1 AS position FROM assets a'+clause+') WHERE id=?',(*args,identity)).fetchone()
             return row['position'] if row else None

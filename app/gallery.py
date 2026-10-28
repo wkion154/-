@@ -1,5 +1,6 @@
 from collections import OrderedDict
 import time
+import html
 from PySide6.QtCore import QAbstractListModel, QModelIndex, Qt, QSize, QTimer, Signal, QRect, QPoint
 from PySide6.QtGui import QColor, QPainter, QPixmap, QFont
 from PySide6.QtWidgets import QListView, QStyledItemDelegate, QStyle, QAbstractItemView
@@ -21,6 +22,7 @@ class GalleryModel(QAbstractListModel):
         self.scope = None
         self.search = ''
         self.sort = 'newest'
+        self.source_filter = None
         self.generation = 0
         self.loading = False
         self.pending_pages = {}
@@ -65,9 +67,9 @@ class GalleryModel(QAbstractListModel):
         if role == Qt.ItemDataRole.UserRole:
             return row
         if role == Qt.ItemDataRole.ToolTipRole and row:
-            return row['name']+'\n'+row['path']
+            return '<span>'+html.escape(row['name'])+'<br>'+html.escape(row['path'])+'</span>'
 
-    def reload(self, scope=None, search='', sort='newest'):
+    def reload(self, scope=None, search='', sort='newest', source_filter=None):
         self.generation += 1
         generation = self.generation
         for job in self.pending_pages.values():
@@ -77,6 +79,7 @@ class GalleryModel(QAbstractListModel):
         self.wanted_pages.clear()
         self.dispatch.stop()
         self.scope, self.search, self.sort = scope, search, sort
+        self.source_filter = source_filter
         self.beginResetModel()
         self.pages.clear()
         self.total = 0
@@ -97,7 +100,7 @@ class GalleryModel(QAbstractListModel):
             if generation == self.generation:
                 self.loading = False
                 self.failed.emit(message)
-        job = self.tasks.submit(lambda _: self.db.query(scope, search, sort), done, error)
+        job = self.tasks.submit(lambda _: self.db.query(scope, search, sort, source_filter=source_filter), done, error)
         self.pending_pages[-1] = job
 
     def _dispatch_pages(self):
@@ -107,6 +110,7 @@ class GalleryModel(QAbstractListModel):
                 continue
             generation = self.generation
             scope, search, sort = self.scope, self.search, self.sort
+            source_filter = self.source_filter
             def done(result, number=number, generation=generation):
                 if generation != self.generation:
                     return
@@ -129,8 +133,8 @@ class GalleryModel(QAbstractListModel):
                 self.failed.emit(message)
                 self._dispatch_pages()
             self.pending_pages[number] = self.tasks.submit(
-                lambda _, number=number, scope=scope, search=search, sort=sort:
-                    self.db.query(scope, search, sort, number*self.PAGE_SIZE, self.PAGE_SIZE, count=False),
+                lambda _, number=number, scope=scope, search=search, sort=sort, source_filter=source_filter:
+                    self.db.query(scope, search, sort, number*self.PAGE_SIZE, self.PAGE_SIZE, count=False, source_filter=source_filter),
                 done, error)
 
     def close_tasks(self):

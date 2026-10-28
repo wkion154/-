@@ -1,10 +1,10 @@
-# K-IDOL ARCHIVE · Alpha 3 · v0.3.0 개발판
+# K-IDOL ARCHIVE · Alpha 4 · v0.4.0 개발판
 
 Python/PySide6 기반 로컬 인물 사진 라이브러리입니다. 사진 중심 차콜 UI, 그룹·인물 관리, 비동기 갤러리와 기본 뷰어를 제공합니다. Eagle의 라이브러리/정보 패널 구조와 Lightroom의 감상 흐름을 참고한 독립 구현입니다. 상표·아이콘·사진·소스는 복제하지 않았습니다.
 
 ## 이번 버전과 현재 제한
 
-온라인 수집·갱신 엔진과 관리 화면을 구현했습니다. **현재 클라우드에서는 Wikimedia 요청이 프록시 403으로 차단되어 최신 정책/API 및 실제 사진 수집을 검증하지 못했습니다. 따라서 실제 자동 수집은 비활성 상태이며, 완성된 온라인 서비스로 보고하지 않습니다.** Windows 실행/배포 검증도 남아 있습니다.
+추가 지시서를 반영해 멀티 소스 수집 기반과 출처·URL 관리 화면을 추가했습니다. 출처별 어댑터, 독립 권한, HTML/DOM 이미지 후보 추출, 실측 해상도와 개정본 보관을 지원합니다. 출처 목록에 있다는 이유만으로 해당 사이트 수집이 지원되는 것은 아닙니다.  **현재 클라우드에서는 Wikimedia 요청이 프록시 403으로 차단되어 최신 정책/API 및 실제 사진 수집을 검증하지 못했습니다. 따라서 실제 자동 수집은 비활성 상태이며, 완성된 온라인 서비스로 보고하지 않습니다.** Windows 실행/배포 검증도 남아 있습니다.
 
 - Wikidata 신규 후보 탐색/정보 갱신, Commons 카테고리 사진 목록 Provider.
 - 출처·저작자·파일별 라이선스·촬영일/업로드일을 분리한 원격 메타데이터 인덱스.
@@ -14,7 +14,7 @@ Python/PySide6 기반 로컬 인물 사진 라이브러리입니다. 사진 중�
 - 사진 카테고리만으로 인물 등장을 확정하지 않습니다. 인물 연결에는 사용자의 명시적인 확인이 필요합니다.
 - 기존 가상 갤러리/128MiB 뷰어 캐시/미리읽기/선택·스크롤 복원 유지. 뷰어를 닫을 때 표시 이미지까지 해제하고 종료된 작업 관리자에 늦은 응답이 전달되지 않도록 수정했습니다.
 
-[이번 단계 보고서](docs/stage-3-report.md) · [실제 연결 대기 화면](docs/online-ui-v0.3.png) · [이전 성능 단계](docs/stage-2-report.md)
+[이번 단계 보고서](docs/stage-4-report.md) · [멀티 소스 화면](docs/multisource-ui-v0.4.png) · [이전 수집 단계](docs/stage-3-report.md) · [실제 연결 대기 화면](docs/online-ui-v0.3.png) · [이전 성능 단계](docs/stage-2-report.md)
 
 ## 실행
 
@@ -70,11 +70,11 @@ python scripts/profile_navigation.py
 python scripts/profile_virtual_gallery.py
 ```
 
-Linux 헤드리스: 앞에 `QT_QPA_PLATFORM=offscreen`을 지정하세요. 테스트 데이터는 임시 폴더에 생성한 이미지이며 실제 아티스트 사진을 포함하지 않습니다. `docs/benchmark.json`은 100/1,000/10,000개 가상 메타데이터 조회, `docs/image-profile.json`은 100개의 생성 JPEG 로딩 측정입니다. 신규 측정은 `docs/*-v0.2.json`에 있습니다. 프로파일 스크립트의 RSS 측정은 Linux용입니다. 현재 검증 범위는 `docs/stage-3-report.md`, 이전 성능 결과는 `docs/stage-2-report.md`, 이전 Alpha 1 기록은 `docs/test-report.md`를 확인하세요.
+Linux 헤드리스: 앞에 `QT_QPA_PLATFORM=offscreen`을 지정하세요. 테스트 데이터는 임시 폴더에 생성한 이미지이며 실제 아티스트 사진을 포함하지 않습니다. `docs/benchmark.json`은 100/1,000/10,000개 가상 메타데이터 조회, `docs/image-profile.json`은 100개의 생성 JPEG 로딩 측정입니다. 신규 측정은 `docs/*-v0.2.json`에 있습니다. 프로파일 스크립트의 RSS 측정은 Linux용입니다. 현재 검증 범위는 `docs/stage-4-report.md`, 이전 성능 결과는 `docs/stage-2-report.md`, 이전 Alpha 1 기록은 `docs/test-report.md`를 확인하세요.
 
 ## Windows 배포
 
-Windows Python 3.12에서 `build_windows.bat` 실행. 테스트 → PyInstaller 폴더형 빌드 → 의존성 라이선스 수집 → ZIP 및 SHA256 생성 순서입니다. 결과 경로: `dist/K-IDOL-ARCHIVE_v0.3.0_Windows.zip`.
+Windows Python 3.12에서 `build_windows.bat` 실행. 테스트 → PyInstaller 폴더형 빌드 → 의존성 라이선스 수집 → ZIP 및 SHA256 생성 순서입니다. 결과 경로: `dist/K-IDOL-ARCHIVE_v0.4.0_Windows.zip`.
 
 **현재 Linux 환경에서는 Windows 실행 파일을 생성하거나 실기 검증하지 않았습니다.** 빌드 스크립트를 제공하지만 Windows 성공을 보증하지 않습니다. 소스 ZIP은 `python scripts/package.py`로 생성합니다. 사용자 데이터는 배포 폴더 밖에 저장됩니다.
 
@@ -93,6 +93,21 @@ Windows Python 3.12에서 `build_windows.bat` 실행. 테스트 → PyInstaller 
 
 ## DB 업데이트
 
-v0.3.0은 스키마 v2를 사용합니다. 기존 v1 DB는 SQLite backup API로 `.v1-<고유값>.bak`을 남긴 뒤 원자적으로 추가 테이블을 생성합니다. 기존 그룹/인물/사진/즐겨찾기/설정은 유지합니다. 업데이트 전 앱을 닫고 데이터 폴더를 별도 백업하세요. 이전 v0.2.x 앱으로 새 v2 DB를 열 수는 없습니다.
+v0.4.0은 스키마 v3를 사용합니다. 기존 v1/v2 DB는 SQLite backup API로 버전별 백업을 남긴 뒤 원자적으로 추가 테이블을 생성합니다. 기존 그룹/인물/사진/즐겨찾기/설정은 유지합니다. 업데이트 전 앱을 닫고 데이터 폴더를 별도 백업하세요. 이전 앱으로 새 v3 DB를 열 수는 없습니다.
 
 최적화: 256개 단위 비동기 조회, 모델/델리게이트 기반 리스트, batched 레이아웃, 화면 주변 썸네일 우선, 최대 8개 썸네일 작업/2개 처리 스레드, decoded thumbnail LRU 96개, 뷰어 이전 작업 취소와 오래된 응답 무시. 메타데이터 캐시는 최대 2,048건, 뷰어 메타데이터 창은 최대 768건, 디코딩 이미지 캐시는 128MiB/12항목입니다. Qt 내부 레이아웃 데이터는 전체 결과 수에 비례하며 현재 표시 이미지와 디코더 임시 버퍼는 이미지 캐시 한도에 포함되지 않습니다. PNG 등은 미리보기에서도 내부적으로 전체 이미지를 디코딩할 수 있습니다. 파일 영역 단위 디코딩과 디스크 캐시 용량 자동 정리는 아직 지원하지 않습니다.
+
+## 멀티 소스 기반 사용
+
+온라인 → **출처 · URL**에서 검토한 출처 설정과 HTTPS 링크를 등록합니다. 링크 등록은 다운로드 허용을 의미하지 않습니다. 메타데이터, 썸네일, 원본, 로컬 분석, AI 입력, 결과 저장 권한은 각각 별도로 검토합니다. 브라우저 DOM 렌더링도 추가 허용이 필요합니다. JSON 설정 예시는 `docs/examples/public-page-source.json`에 있습니다. 외부 실행 코드는 가져오지 않습니다.
+
+정적 HTML/직접 이미지 URL은 기본 의존성으로 동작합니다. 선택적 JavaScript DOM 처리는 별도 브라우저가 필요합니다:
+
+```sh
+python -m pip install -r requirements-browser.lock
+python -m playwright install chromium
+```
+
+브라우저 샌드박스를 해제하지 마세요. Windows 배포 스크립트는 선택 브라우저를 자동 포함하지 않습니다. 실제 사이트 정책/도메인/파일 권한 검토 전에는 활성화하지 않습니다. X·Instagram·언론사·Flickr·Kpopping 등은 현재 검토 후보이며 전용 수집 구현 또는 실제 연동 완료를 뜻하지 않습니다.
+
+검증: Linux에서 실제 Chromium 샌드박스를 유지한 합성 DOM 테스트를 포함해 91개 통과. 10만 건 가상 메타데이터 마지막 페이지 이동 13.34ms, 메타데이터 상주 최대 2,048건. 고유 사진 10만 장 디코딩이나 Windows 화면 FPS 측정은 아닙니다.
