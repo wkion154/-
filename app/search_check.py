@@ -20,7 +20,7 @@ def check(online, query, *, search=None, limit=3, batches=2, check_files=False, 
     cancel = threading.Event()
     report = dict(checked_at=datetime.now(timezone.utc).isoformat(), query=query,
                   scope='configured search and library pipeline; not GUI interaction',
-                  sources=list(search.providers), pages=[], items=[], errors=[],
+                  sources=list(search.providers), pages=[], items=[], errors=[], failure_details=[],
                   file_check_requested=check_files, save_requested=save,
                   provided_preview_enabled=online.settings.values.get('kpopping_provided_preview') is True,
                   search_browser_visible=online.settings.values.get('kpopping_show_browser') is True,
@@ -71,6 +71,10 @@ def check(online, query, *, search=None, limit=3, batches=2, check_files=False, 
             for item in report['items'])
     except Exception as error:
         report['errors'].append(str(error))
+        report['failure_details'].append(dict(stage=getattr(error,'stage','search'),
+                                             http_status=getattr(error,'status',None),
+                                             page_url=getattr(error,'page_url',None),
+                                             blocked=getattr(error,'blocked',False)))
     return report
 
 

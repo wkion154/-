@@ -57,7 +57,9 @@ class KpoppingBrowserProvider:
                     if time.monotonic()-start>90:raise RemoteError('브라우저 검색 시간 제한을 초과했습니다.')
                 if not output_path.is_file():raise RemoteError('브라우저 검색 실행에 실패했습니다. 선택 브라우저 의존성을 확인하세요.')
                 data=json.loads(output_path.read_text('utf-8'))
-                if 'error' in data:raise RemoteError(data['error'],blocked=True)
+                if 'error' in data:
+                    from ..browser_search_worker import remote_failure
+                    raise remote_failure(data)
                 return data['result']
             finally:
                 if process is not None and process.poll() is None:

@@ -5,6 +5,25 @@ from urllib.parse import urlsplit
 from urllib.robotparser import RobotFileParser
 
 
+class BrowserSearchFailure(RuntimeError):
+    def __init__(self,message,*,stage,blocked=True,status=None,url=None):
+        super().__init__(message)
+        self.stage,self.blocked,self.status,self.url=stage,blocked,status,url
+
+
+def failure_payload(error):
+    return dict(error=str(error),blocked=getattr(error,'blocked',True),
+                status=getattr(error,'status',None),stage=getattr(error,'stage','browser'),
+                page_url=getattr(error,'url',None))
+
+
+def remote_failure(data):
+    from .providers.http import RemoteError
+    error=RemoteError(data['error'],blocked=data.get('blocked',True),status=data.get('status'))
+    error.stage=data.get('stage','browser');error.page_url=data.get('page_url')
+    return error
+
+
 def launch_browser(chromium,show_browser=False):
     for channel in ('msedge','chrome'):
         try:
@@ -26,14 +45,14 @@ def run(request):
         try:
             context=browser.new_context(accept_downloads=False,service_workers='block')
             response=context.request.get('https://kpopping.com/robots.txt',timeout=15000)
-            if response.status not in (200,404,410):raise RuntimeError('robots 확인 실패: '+str(response.status))
+            if response.status not in (200,404,410):raise BrowserSearchFailure('robots 확인 실패: '+str(response.status),stage='robots',status=response.status,url='https://kpopping.com/robots.txt')
             body=response.text() if response.status==200 else 'User-agent: *\nAllow: /'
             if body.lstrip().startswith('<'):raise RuntimeError('robots 대신 접근 확인 화면이 반환됐습니다.')
             rules=RobotFileParser();rules.parse(body.splitlines())
             if not rules.can_fetch('K-IDOL-ARCHIVE',url):raise RuntimeError('이 경로의 자동 접근은 robots에서 허용되지 않습니다.')
             page=context.new_page();page.set_default_timeout(6000)
             response=page.goto(url,wait_until='domcontentloaded',timeout=25000)
-            if response and response.status>=400:raise RuntimeError('사이트 접근 오류: '+str(response.status))
+            if response and response.status>=400:raise BrowserSearchFailure('사이트 접근 오류: '+str(response.status)+' · '+page.url+' · 사이트가 요청을 거부해 검색을 중단했습니다.',stage='listing',status=response.status,url=page.url)
             page.wait_for_timeout(1500)
             title=page.title().lower()
             if any(t in title for t in ('captcha','just a moment','access denied')):raise RuntimeError('접근 확인 화면입니다. 우회하지 않습니다.')
@@ -45,7 +64,7 @@ def run(request):
                 visible.fill(request['query']);page.wait_for_timeout(1200)
                 options=page.get_by_text(request['query'],exact=True)
                 chosen=next((options.nth(i) for i in range(min(options.count(),12)) if options.nth(i).is_visible()),None)
-                if chosen is None:raise RuntimeError('정확히 대응하는 인물/그룹 선택지를 확인하지 못했습니다.')
+                if chosen is None:raise BrowserSearchFailure('정확히 대응하는 인물/그룹 선택지를 확인하지 못했습니다.',stage='entity_selection',blocked=False,url=page.url)
                 chosen.click();page.wait_for_timeout(1000)
             if not artist_filter(page.url)[0]:raise RuntimeError('검색 인물 필터 적용을 확인하지 못했습니다.')
             try:
@@ -66,4 +85,4 @@ if __name__=='__main__':
         request=json.loads(Path(sys.argv[1]).read_text('utf-8'));result=run(request)
         Path(sys.argv[2]).write_text(json.dumps(dict(result=result),ensure_ascii=False),'utf-8')
     except Exception as error:
-        Path(sys.argv[2]).write_text(json.dumps(dict(error=str(error)),ensure_ascii=False),'utf-8');sys.exit(1)
+        Path(sys.argv[2]).write_text(json.dumps(failure_payload(error),ensure_ascii=False),'utf-8');sys.exit(1)
